@@ -1,5 +1,5 @@
 import os
-from typing import List
+
 
 def load_env_file():
     env_file = '.env'
@@ -11,10 +11,11 @@ def load_env_file():
                     key, value = line.split('=', 1)
                     os.environ[key.strip()] = value.strip()
 
+
 class Config:
     def __init__(self):
         load_env_file()
-        self.clickhouse_host = os.getenv('CLICKHOUSE_HOST', '172.30.63.35')
+        self.clickhouse_host = os.getenv('CLICKHOUSE_HOST', 'localhost')
         self.clickhouse_port = int(os.getenv('CLICKHOUSE_PORT', '9000'))
         self.clickhouse_user = os.getenv('CLICKHOUSE_USER', 'default')
         self.clickhouse_password = os.getenv('CLICKHOUSE_PASSWORD', 'default')
@@ -22,6 +23,7 @@ class Config:
         self.cmc_api_key = os.getenv('CMC_API_KEY', '')
         symbols_str = os.getenv('SYMBOLS', 'BTC,ETH,SOL')
         self.symbols = [s.strip() for s in symbols_str.split(',') if s.strip()]
+        self.price_provider = os.getenv('PRICE_PROVIDER', 'cmc').lower()
 
     def get_cmc_headers(self) -> dict:
         return {
@@ -29,4 +31,7 @@ class Config:
             'Accept': 'application/json'
         }
 
+
 config = Config()
+
+

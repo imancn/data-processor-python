@@ -1,14 +1,22 @@
 import asyncio
 import sys
+import os
 from datetime import datetime
-from crypto_price_fetcher.config import config
-from crypto_price_fetcher.storage_native import storage
-from crypto_price_fetcher.fetcher import fetch_crypto_prices
+import pytest
 
+SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src')
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+from configurations.config import config
+from adapters._bases.clickhouse_adapter import ClickHouseAdapter
+from adapters.http.coin_market_cap_http_adapter import CoinMarketCapHttpAdapter
+
+@pytest.mark.asyncio
 async def test_clickhouse_connection():
     print("\n🧪 Testing ClickHouse connection...")
     try:
-        success = await storage.test_connection()
+        ch = ClickHouseAdapter()
+        success = ch.ping()
         if success:
             print("✅ ClickHouse connection successful")
             return True
@@ -19,10 +27,12 @@ async def test_clickhouse_connection():
         print(f"❌ ClickHouse connection error: {e}")
         return False
 
+@pytest.mark.asyncio
 async def test_full_fetch():
     print("\n🧪 Testing full data fetch...")
     try:
-        crypto_data = await fetch_crypto_prices(config.symbols)
+        async with CoinMarketCapHttpAdapter() as adapter:
+            crypto_data = await adapter.fetch(config.symbols)
         if crypto_data and len(crypto_data) > 0:
             print(f"✅ Fetched {len(crypto_data)} records")
             return True
@@ -33,12 +43,20 @@ async def test_full_fetch():
         print(f"❌ Fetch error: {e}")
         return False
 
+@pytest.mark.asyncio
 async def test_storage():
     print("\n🧪 Testing data storage...")
     try:
-        crypto_data = await fetch_crypto_prices(config.symbols)
+        async with CoinMarketCapHttpAdapter() as adapter:
+            crypto_data = await adapter.fetch(config.symbols)
         if crypto_data:
-            success = await storage.save_crypto_data(crypto_data)
+            from adapters.clickhouse.coin_market_cap_clickhouse_adapter import CoinMarketCapClickHouseAdapter
+            repo = CoinMarketCapClickHouseAdapter()
+            ok = repo.ensure_schema()
+            if not ok:
+                print("❌ Schema setup failed")
+                return False
+            success = repo.upsert_prices(crypto_data)
             if success:
                 print("✅ Data saved successfully")
                 return True

@@ -26,70 +26,71 @@ check_dependencies() {
         error "Python3 is not installed"
         exit 1
     fi
-    python3 -c "import aiohttp, clickhouse_driver, pytz" 2>/dev/null || {
-        error "Missing required packages. Installing..."
-        sudo apt update
-        sudo apt install -y python3-aiohttp python3-clickhouse-driver python3-tz
-    }
+    if ! command -v poetry &> /dev/null; then
+        warn "Poetry not found. Installing (user-local)..."
+        curl -sSL https://install.python-poetry.org | python3 - --yes
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
     log "Dependencies check completed"
 }
 
 run_tests() {
     log "Running tests..."
-    log "Running unit tests..."
-    python3 tests/unit/simple_test.py
-    log "Running integration tests..."
-    python3 tests/integration/test.py
-    python3 tests/integration/full_test.py
+    poetry install --no-root
+    log "Running pytest suite..."
+    poetry run pytest -q || { error "Tests failed"; exit 1; }
     log "All tests completed successfully!"
 }
 
-run_once() {
-    log "Running crypto price fetcher once..."
-    python3 cron_job.py
+cron_run() {
+    JOB_NAME="${1:-cmc_hourly_prices}"
+    log "Running cron job: $JOB_NAME"
+    (cd "$PROJECT_DIR/src" && poetry run python -m crons.run "$JOB_NAME")
 }
 
 setup_database() {
     log "Setting up database..."
-    python3 -c "
+    poetry run python - <<'PY'
 import asyncio
-from crypto_price_fetcher.storage_native import storage
+from adapters._bases.clickhouse_adapter import ClickHouseAdapter
 
 async def setup():
-    await storage.create_database()
-    await storage.create_table()
+    ch = ClickHouseAdapter()
+    client = ch.client()
+    client.execute('CREATE DATABASE IF NOT EXISTS crypto')
     print('✅ Database setup completed')
 
 asyncio.run(setup())
-"
+PY
 }
 
 drop_database() {
     log "Dropping database..."
-    python3 -c "
+    poetry run python - <<'PY'
 import asyncio
-from crypto_price_fetcher.storage_native import storage
+from adapters._bases.clickhouse_adapter import ClickHouseAdapter
 
 async def drop():
-    client = storage._get_client()
+    ch = ClickHouseAdapter()
+    client = ch.client()
     client.execute('DROP TABLE IF EXISTS crypto.crypto_prices')
     print('✅ Table dropped')
 
 asyncio.run(drop())
-"
+PY
 }
 
 setup_cron() {
-    log "Setting up cron job..."
-    CRON_SCRIPT="$PROJECT_DIR/cron_job.py"
-    (crontab -l 2>/dev/null | grep -v "$CRON_SCRIPT"; echo "0 * * * * cd $PROJECT_DIR && python3 $CRON_SCRIPT >> $PROJECT_DIR/cron.log 2>&1") | crontab -
-    log "Cron job setup completed. Check with: crontab -l"
+    JOB_NAME="${1:-cmc_hourly_prices}"
+    log "Setting up cron job: $JOB_NAME"
+    mkdir -p "$PROJECT_DIR/logs"
+    (cd "$PROJECT_DIR/src" && poetry run python -m crons.install "$JOB_NAME")
+    log "Cron job setup completed via crons.install. Check with: crontab -l"
 }
 
 kill_processes() {
     log "Killing all running processes..."
-    pkill -f "cron_job.py" 2>/dev/null || true
-    pkill -f "crypto_price_fetcher" 2>/dev/null || true
+    pkill -f "crons.run" 2>/dev/null || true
     log "All processes killed"
 }
 
@@ -100,11 +101,12 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  check          Check dependencies"
-    echo "  test           Run all tests"
-    echo "  run_once       Run the fetcher once"
+    echo "  test           Run all tests (via poetry)"
+    echo "  cron_run NAME  Run a cron job by name (default: cmc_hourly_prices)"
+    echo "  cron_backfill NAME HOURS  Backfill a job for past HOURS"
     echo "  setup_db       Setup database"
     echo "  drop_db        Drop database"
-    echo "  setup_cron     Setup cron job"
+    echo "  setup_cron [NAME]  Install cron for job name (default: cmc_hourly_prices)"
     echo "  kill           Kill all running processes"
     echo "  clean          Clean and restart (drop_db + kill + run_once)"
     echo "  help           Show this help"
@@ -119,9 +121,16 @@ case "${1:-help}" in
         check_dependencies
         run_tests
         ;;
-    run_once)
+    cron_run)
         check_dependencies
-        run_once
+        cron_run "${2:-cmc_hourly_prices}"
+        ;;
+    cron_backfill)
+        check_dependencies
+        JOB_NAME="${2:-cmc_hourly_prices}"
+        HOURS="${3:-0}"
+        log "Backfilling $JOB_NAME for $HOURS hours"
+        (cd "$PROJECT_DIR/src" && poetry run python -m crons.run "$JOB_NAME" backfill "$HOURS")
         ;;
     setup_db)
         check_dependencies
@@ -132,7 +141,7 @@ case "${1:-help}" in
         ;;
     setup_cron)
         check_dependencies
-        setup_cron
+        setup_cron "${2:-cmc_hourly_prices}"
         ;;
     kill)
         kill_processes
@@ -141,7 +150,7 @@ case "${1:-help}" in
         kill_processes
         drop_database
         setup_database
-        run_once
+        cron_run "cmc_hourly_prices"
         ;;
     help|*)
         show_help

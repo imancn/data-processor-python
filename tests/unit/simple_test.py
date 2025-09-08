@@ -1,35 +1,34 @@
 import os
 import sys
+import pytest
 
 def test_config():
     print("🔧 Testing Configuration")
     print("-" * 30)
+    SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src')
+    if SRC_DIR not in sys.path:
+        sys.path.insert(0, SRC_DIR)
     try:
-        from crypto_price_fetcher.config import config
-        print(f"ClickHouse Host: {config.clickhouse_host}")
-        print(f"ClickHouse Port: {config.clickhouse_port}")
-        print(f"ClickHouse User: {config.clickhouse_user}")
-        print(f"ClickHouse DB: {config.clickhouse_db}")
-        print(f"Symbols: {config.symbols}")
-        print(f"CMC API Key: {'Set' if config.cmc_api_key else 'Not set'}")
-        print("✅ Configuration loaded successfully")
-        return True
+        from configurations.config import config
     except Exception as e:
-        print(f"❌ Configuration error: {e}")
-        return False
+        pytest.fail(f"Configuration import failed: {e}")
+    print(f"ClickHouse Host: {config.clickhouse_host}")
+    print(f"ClickHouse Port: {config.clickhouse_port}")
+    print(f"ClickHouse User: {config.clickhouse_user}")
+    print(f"ClickHouse DB: {config.clickhouse_db}")
+    print(f"Symbols: {config.symbols}")
+    print(f"CMC API Key: {'Set' if config.cmc_api_key else 'Not set'}")
+    print("✅ Configuration loaded successfully")
 
 def test_file_structure():
     print("\n📁 Testing File Structure")
     print("-" * 30)
     required_files = [
-        'crypto_price_fetcher/__init__.py',
-        'crypto_price_fetcher/config.py',
-        'crypto_price_fetcher/fetcher.py',
-        'crypto_price_fetcher/storage_native.py',
-        'crypto_price_fetcher/main.py',
-        'requirements.txt',
-        '.env',
-        'scripts/setup/setup_clickhouse.sql',
+        'src/main.py',
+        'src/configurations/config.py',
+        'src/adapters/_bases/clickhouse_adapter.py',
+        'src/adapters/http/coin_market_cap_http_adapter.py',
+        'src/adapters/clickhouse/coin_market_cap_clickhouse_adapter.py',
         'README.md'
     ]
     missing_files = []
@@ -40,57 +39,28 @@ def test_file_structure():
             print(f"❌ {file_path}")
             missing_files.append(file_path)
     if missing_files:
-        print(f"\n❌ Missing files: {missing_files}")
-        return False
-    else:
-        print("\n✅ All required files present")
-        return True
+        pytest.fail(f"Missing files: {missing_files}")
+    print("\n✅ All required files present")
 
 def test_sql_syntax():
     print("\n🗄️  Testing SQL Syntax")
     print("-" * 30)
-    try:
-        with open('scripts/setup/setup_clickhouse.sql', 'r') as f:
-            sql_content = f.read()
-        required_keywords = [
-            'CREATE DATABASE',
-            'CREATE TABLE',
-            'ENGINE = MergeTree',
-            'ORDER BY',
-            'CREATE INDEX',
-            'CREATE MATERIALIZED VIEW'
-        ]
-        missing_keywords = []
-        for keyword in required_keywords:
-            if keyword in sql_content:
-                print(f"✅ {keyword}")
-            else:
-                print(f"❌ {keyword}")
-                missing_keywords.append(keyword)
-        if missing_keywords:
-            print(f"\n❌ Missing SQL keywords: {missing_keywords}")
-            return False
-        else:
-            print("\n✅ SQL syntax looks good")
-            return True
-    except Exception as e:
-        print(f"❌ SQL test error: {e}")
-        return False
+    print("Skipping SQL file check; schema is created programmatically.")
 
-async def test_clickhouse_connection():
+def test_clickhouse_connection():
     print("\n🔌 Testing ClickHouse Connection")
     print("-" * 30)
+    SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src')
+    if SRC_DIR not in sys.path:
+        sys.path.insert(0, SRC_DIR)
     try:
-        from crypto_price_fetcher.storage_native import storage
-        if await storage.test_connection():
-            print("✅ ClickHouse connection successful")
-            return True
-        else:
-            print("❌ ClickHouse connection failed")
-            return False
+        from adapters._bases.clickhouse_adapter import ClickHouseAdapter
+        ch = ClickHouseAdapter()
+        ok = ch.ping()
+        print("✅ ClickHouse connection successful" if ok else "❌ ClickHouse connection failed")
+        assert ok
     except Exception as e:
-        print(f"❌ ClickHouse test error: {e}")
-        return False
+        pytest.fail(f"ClickHouse test error: {e}")
 
 async def main():
     print("🧪 Simple Crypto Data Fetcher Test")
@@ -105,12 +75,8 @@ async def main():
     total = len(tests)
     for test_name, test_func in tests:
         try:
-            if test_name == "ClickHouse Connection":
-                if await test_func():
-                    passed += 1
-            else:
-                if test_func():
-                    passed += 1
+            test_func()
+            passed += 1
         except Exception as e:
             print(f"❌ {test_name} failed with exception: {e}")
     print("\n" + "=" * 50)

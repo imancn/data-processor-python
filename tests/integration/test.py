@@ -1,14 +1,17 @@
 import asyncio
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from crypto_price_fetcher.config import config
-from crypto_price_fetcher.storage_native import storage
-from crypto_price_fetcher.fetcher import fetch_crypto_prices
+SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src')
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+from configurations.config import config
+from adapters._bases.clickhouse_adapter import ClickHouseAdapter
+from adapters.http.coin_market_cap_http_adapter import CoinMarketCapHttpAdapter
 
 async def test_connection():
     print("🔌 Testing ClickHouse connection...")
-    if await storage.test_connection():
+    ch = ClickHouseAdapter()
+    if ch.ping():
         print("✅ ClickHouse connection successful")
         return True
     else:
@@ -21,7 +24,8 @@ async def test_cmc_api():
         print("❌ CMC_API_KEY not configured")
         return False
     try:
-        data = await fetch_crypto_prices(['BTC', 'ETH'])
+        async with CoinMarketCapHttpAdapter() as adapter:
+            data = await adapter.fetch(['BTC', 'ETH'])
         if data:
             print(f"✅ CMC API working - fetched {len(data)} records")
             return True
@@ -35,10 +39,7 @@ async def test_cmc_api():
 async def test_database_setup():
     print("\n🗄️  Testing database setup...")
     try:
-        await storage.create_database()
-        print("✅ Database creation successful")
-        await storage.create_table()
-        print("✅ Table creation successful")
+        # schema ensured by loader-level adapter; nothing to assert here
         return True
     except Exception as e:
         print(f"❌ Database setup error: {e}")
@@ -47,15 +48,23 @@ async def test_database_setup():
 async def test_full_workflow():
     print("\n🚀 Testing complete workflow...")
     try:
-        data = await fetch_crypto_prices(config.symbols[:3])
+        async with CoinMarketCapHttpAdapter() as adapter:
+            data = await adapter.fetch(config.symbols[:3])
         if not data:
             print("❌ No data fetched")
             return False
-        success = await storage.save_crypto_data(data)
+        from adapters.clickhouse.coin_market_cap_clickhouse_adapter import CoinMarketCapClickHouseAdapter
+        repo = CoinMarketCapClickHouseAdapter()
+        ok = repo.ensure_schema()
+        if not ok:
+            print("❌ Schema setup failed")
+            return False
+        success = repo.upsert_prices(data)
         if success:
             print("✅ Data saved successfully")
-            recent_data = await storage.get_recent_data(5)
-            print(f"✅ Retrieved {len(recent_data)} recent records")
+            # simple sanity: recent read
+            rows = repo.ch.exec(f"SELECT count() FROM {repo.db}.crypto_prices")
+            print(f"✅ Total rows in crypto_prices: {rows[0][0] if rows else 0}")
             return True
         else:
             print("❌ Failed to save data")

@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "data-processor"
+version = "0.1.0"
+description = "Crypto price fetcher with ClickHouse storage"
+authors = ["invex <dev@invex>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+aiohttp = "^3.9.5"
+clickhouse-driver = "^0.2.9"
+pytz = "^2024.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.0"
+pytest-asyncio = "^0.23.8"
+
+[build-system]
+requires = ["poetry-core>=1.7.0"]
+build-backend = "poetry.core.masonry.api"
+
+
