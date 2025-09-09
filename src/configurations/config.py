@@ -2,14 +2,24 @@ import os
 
 
 def load_env_file():
-    env_file = '.env'
-    if os.path.exists(env_file):
-        with open(env_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    os.environ[key.strip()] = value.strip()
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates = [
+        os.path.join(project_root, '.env'),                      # project root
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'),  # src/configurations/.env
+        os.path.join(os.getcwd(), '.env'),                       # current working dir
+    ]
+    seen = set()
+    for env_file in candidates:
+        if env_file in seen:
+            continue
+        seen.add(env_file)
+        if os.path.exists(env_file):
+            with open(env_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        os.environ[key.strip()] = value.strip()
 
 
 class Config:

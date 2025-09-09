@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import pytz
 from adapters._bases.clickhouse_adapter import ClickHouseAdapter
@@ -43,7 +43,7 @@ class CoinMarketCapClickHouseAdapter:
         except Exception:
             return False
 
-    def upsert_prices(self, data: List[Dict[str, Any]], target_hour: datetime | None = None) -> bool:
+    def upsert_prices(self, data: List[Dict[str, Any]], target_hour: Optional[datetime] = None) -> bool:
         if not data:
             return True
         try:

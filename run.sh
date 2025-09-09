@@ -26,31 +26,46 @@ check_dependencies() {
         error "Python3 is not installed"
         exit 1
     fi
-    if ! command -v poetry &> /dev/null; then
-        warn "Poetry not found. Installing (user-local)..."
-        curl -sSL https://install.python-poetry.org | python3 - --yes
-        export PATH="$HOME/.local/bin:$PATH"
+    if [ ! -x "$PROJECT_DIR/.venv/bin/python" ]; then
+        log "Creating virtualenv..."
+        python3 -m venv "$PROJECT_DIR/.venv"
     fi
+    PY="$PROJECT_DIR/.venv/bin/python"
+    "$PY" -m pip install -U pip >/dev/null 2>&1 || true
+    # Ensure runtime deps
+    "$PY" - <<'PY'
+import sys
+def ensure(pkg):
+    try:
+        __import__(pkg)
+    except Exception:
+        import subprocess
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', pkg])
+for p in ['aiohttp','clickhouse-driver','pytz']:
+    ensure(p)
+PY
     log "Dependencies check completed"
 }
 
 run_tests() {
     log "Running tests..."
-    poetry install --no-root
+    PY="$PROJECT_DIR/.venv/bin/python"
+    "$PY" -m pip install -U pytest pytest-asyncio >/dev/null 2>&1 || true
     log "Running pytest suite..."
-    poetry run pytest -q || { error "Tests failed"; exit 1; }
+    "$PY" -m pytest -q || { error "Tests failed"; exit 1; }
     log "All tests completed successfully!"
 }
 
 cron_run() {
     JOB_NAME="${1:-cmc_hourly_prices}"
     log "Running cron job: $JOB_NAME"
-    (cd "$PROJECT_DIR/src" && poetry run python -m crons.run "$JOB_NAME")
+    PY="$PROJECT_DIR/.venv/bin/python"
+    (cd "$PROJECT_DIR/src" && "$PY" -m crons.run "$JOB_NAME")
 }
 
 setup_database() {
     log "Setting up database..."
-    poetry run python - <<'PY'
+    "$PROJECT_DIR/.venv/bin/python" - <<'PY'
 import asyncio
 from adapters._bases.clickhouse_adapter import ClickHouseAdapter
 
@@ -66,7 +81,7 @@ PY
 
 drop_database() {
     log "Dropping database..."
-    poetry run python - <<'PY'
+    "$PROJECT_DIR/.venv/bin/python" - <<'PY'
 import asyncio
 from adapters._bases.clickhouse_adapter import ClickHouseAdapter
 
@@ -84,7 +99,7 @@ setup_cron() {
     JOB_NAME="${1:-cmc_hourly_prices}"
     log "Setting up cron job: $JOB_NAME"
     mkdir -p "$PROJECT_DIR/logs"
-    (cd "$PROJECT_DIR/src" && poetry run python -m crons.install "$JOB_NAME")
+    (cd "$PROJECT_DIR/src" && "$PROJECT_DIR/.venv/bin/python" -m crons.install "$JOB_NAME")
     log "Cron job setup completed via crons.install. Check with: crontab -l"
 }
 
@@ -101,7 +116,7 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  check          Check dependencies"
-    echo "  test           Run all tests (via poetry)"
+    echo "  test           Run all tests (via venv)"
     echo "  cron_run NAME  Run a cron job by name (default: cmc_hourly_prices)"
     echo "  cron_backfill NAME HOURS  Backfill a job for past HOURS"
     echo "  setup_db       Setup database"
@@ -130,7 +145,7 @@ case "${1:-help}" in
         JOB_NAME="${2:-cmc_hourly_prices}"
         HOURS="${3:-0}"
         log "Backfilling $JOB_NAME for $HOURS hours"
-        (cd "$PROJECT_DIR/src" && poetry run python -m crons.run "$JOB_NAME" backfill "$HOURS")
+        (cd "$PROJECT_DIR/src" && "$PROJECT_DIR/.venv/bin/python" -m crons.run "$JOB_NAME" backfill "$HOURS")
         ;;
     setup_db)
         check_dependencies
