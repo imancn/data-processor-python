@@ -6,7 +6,7 @@ from loaders.coin_market_cap_loader import CoinMarketCapLoader
 
 
 async def main():
-    print(f"[{datetime.now()}] Starting crypto data fetch...")
+    print(f"[{datetime.now()}] Starting cryptocurrency data fetch...")
     loader = CoinMarketCapLoader()
     if not loader.ensure_ready():
         print("❌ ClickHouse connection failed!")
@@ -25,7 +25,7 @@ async def main():
     except Exception as e:
         print(f"❌ Error during execution: {e}")
         return 1
-    print(f"[{datetime.now()}] Crypto data fetch completed successfully!")
+    print(f"[{datetime.now()}] Cryptocurrency data fetch completed successfully!")
     return 0
 
 

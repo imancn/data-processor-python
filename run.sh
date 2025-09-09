@@ -65,34 +65,40 @@ cron_run() {
 
 setup_database() {
     log "Setting up database..."
-    "$PROJECT_DIR/.venv/bin/python" - <<'PY'
+    (cd "$PROJECT_DIR/src" && "$PROJECT_DIR/.venv/bin/python" - <<'PY'
 import asyncio
+import sys
+sys.path.append('.')
 from adapters._bases.clickhouse_adapter import ClickHouseAdapter
 
 async def setup():
     ch = ClickHouseAdapter()
     client = ch.client()
-    client.execute('CREATE DATABASE IF NOT EXISTS crypto')
+    client.execute('CREATE DATABASE IF NOT EXISTS data_warehouse')
     print('✅ Database setup completed')
 
 asyncio.run(setup())
 PY
+)
 }
 
 drop_database() {
     log "Dropping database..."
-    "$PROJECT_DIR/.venv/bin/python" - <<'PY'
+    (cd "$PROJECT_DIR/src" && "$PROJECT_DIR/.venv/bin/python" - <<'PY'
 import asyncio
+import sys
+sys.path.append('.')
 from adapters._bases.clickhouse_adapter import ClickHouseAdapter
 
 async def drop():
     ch = ClickHouseAdapter()
     client = ch.client()
-    client.execute('DROP TABLE IF EXISTS crypto.crypto_prices')
+    client.execute('DROP TABLE IF EXISTS data_warehouse.crypto_prices')
     print('✅ Table dropped')
 
 asyncio.run(drop())
 PY
+)
 }
 
 setup_cron() {
@@ -110,7 +116,7 @@ kill_processes() {
 }
 
 show_help() {
-    echo "Crypto Price Fetcher - Main Execution Script"
+    echo "Cryptocurrency Price Fetcher - Main Execution Script"
     echo ""
     echo "Usage: $0 [COMMAND]"
     echo ""

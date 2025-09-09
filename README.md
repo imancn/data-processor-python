@@ -1,4 +1,4 @@
-Data Processor (Crypto Price Fetcher)
+Data Processor (Cryptocurrency Price Fetcher)
 
 Production-ready, idempotent ETL that fetches cryptocurrency prices from CoinMarketCap and stores hourly snapshots in ClickHouse.
 
@@ -75,7 +75,7 @@ Core commands (run.sh)
 - check: verify Python/Poetry installed
 - test: run full pytest suite
 - setup_db: create database if missing
-- drop_db: drop crypto.crypto_prices table
+- drop_db: drop data_warehouse.crypto_prices table
 - kill: kill any running cron processes
 - cron_run NAME: run a cron job once (default: cmc_hourly_prices)
 - setup_cron [NAME]: install cron for a job name (hourly at minute 0)

@@ -29,7 +29,7 @@ class Config:
         self.clickhouse_port = int(os.getenv('CLICKHOUSE_PORT', '9000'))
         self.clickhouse_user = os.getenv('CLICKHOUSE_USER', 'default')
         self.clickhouse_password = os.getenv('CLICKHOUSE_PASSWORD', 'default')
-        self.clickhouse_db = os.getenv('CLICKHOUSE_DB', 'crypto')
+        self.clickhouse_db = os.getenv('CLICKHOUSE_DB', 'data_warehouse')
         self.cmc_api_key = os.getenv('CMC_API_KEY', '')
         symbols_str = os.getenv('SYMBOLS', 'BTC,ETH,SOL')
         self.symbols = [s.strip() for s in symbols_str.split(',') if s.strip()]
