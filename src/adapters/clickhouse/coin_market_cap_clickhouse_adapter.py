@@ -8,8 +8,6 @@ class CoinMarketCapClickHouseAdapter:
     def __init__(self):
         self.ch = ClickHouseAdapter()
         self.db = self.ch.database
-        self.last_inserted = 0
-        self.last_updated = 0
 
     def ensure_schema(self) -> bool:
         try:
@@ -40,7 +38,8 @@ class CoinMarketCapClickHouseAdapter:
             """
             self.ch.exec(q)
             return True
-        except Exception:
+        except Exception as e:
+            print(f"Error creating schema: {e}")
             return False
 
     def upsert_prices(self, data: List[Dict[str, Any]], target_hour: Optional[datetime] = None) -> bool:
@@ -52,7 +51,6 @@ class CoinMarketCapClickHouseAdapter:
             hour = base_time.replace(minute=0, second=0, microsecond=0)
             last_updated = hour.strftime('%Y-%m-%d %H:%M:%S')
             fetched_at = base_time.strftime('%Y-%m-%d %H:%M:%S')
-            hour_key = hour.strftime('%Y-%m-%d %H:%M:%S')
 
             def f(v, d=0.0):
                 try:
@@ -67,53 +65,31 @@ class CoinMarketCapClickHouseAdapter:
                     return d
 
             to_insert = []
-            inserted = 0
-            updated = 0
             for item in data:
                 symbol = item.get('symbol', '')
                 if not symbol:
                     continue
-                exists = self.ch.exec(f"""
-                    SELECT 1 FROM {self.db}.crypto_prices
-                    WHERE symbol = '{symbol}' AND datetime = '{hour_key}' LIMIT 1
-                """)
-                if exists:
-                    self.ch.write_with_retry(f"""
-                        ALTER TABLE {self.db}.crypto_prices UPDATE
-                          name = '{item.get('name', '')}',
-                          slug = '{item.get('slug', '')}',
-                          price = {f(item.get('price'))},
-                          market_cap = {f(item.get('market_cap'))},
-                          volume_24h = {f(item.get('volume_24h'))},
-                          percent_change_1h = {f(item.get('percent_change_1h'))},
-                          percent_change_24h = {f(item.get('percent_change_24h'))},
-                          percent_change_7d = {f(item.get('percent_change_7d'))},
-                          last_updated = '{last_updated}',
-                          cmc_rank = {i(item.get('cmc_rank'))},
-                          circulating_supply = {f(item.get('circulating_supply'))},
-                          total_supply = {f(item.get('total_supply'))},
-                          max_supply = {f(item.get('max_supply'))}
-                        WHERE symbol = '{symbol}' AND datetime = '{hour_key}'
-                    """)
-                    updated += 1
-                else:
-                    to_insert.append([
-                        symbol,
-                        item.get('name', ''),
-                        item.get('slug', ''),
-                        f(item.get('price')),
-                        f(item.get('market_cap')),
-                        f(item.get('volume_24h')),
-                        f(item.get('percent_change_1h')),
-                        f(item.get('percent_change_24h')),
-                        f(item.get('percent_change_7d')),
-                        last_updated,
-                        i(item.get('cmc_rank')),
-                        f(item.get('circulating_supply')),
-                        f(item.get('total_supply')),
-                        f(item.get('max_supply')),
-                        fetched_at
-                    ])
+                
+                # With ReplacingMergeTree, we just insert new records
+                # The engine will handle deduplication based on the ORDER BY key
+                to_insert.append([
+                    symbol,
+                    item.get('name', ''),
+                    item.get('slug', ''),
+                    f(item.get('price')),
+                    f(item.get('market_cap')),
+                    f(item.get('volume_24h')),
+                    f(item.get('percent_change_1h')),
+                    f(item.get('percent_change_24h')),
+                    f(item.get('percent_change_7d')),
+                    last_updated,
+                    i(item.get('cmc_rank')),
+                    f(item.get('circulating_supply')),
+                    f(item.get('total_supply')),
+                    f(item.get('max_supply')),
+                    fetched_at
+                ])
+            
             if to_insert:
                 self.ch.write_with_retry(f"""
                 INSERT INTO {self.db}.crypto_prices
@@ -122,11 +98,10 @@ class CoinMarketCapClickHouseAdapter:
                  last_updated, cmc_rank, circulating_supply, total_supply, max_supply, fetched_at)
                 VALUES
                 """, to_insert)
-                inserted += len(to_insert)
-            self.last_inserted = inserted
-            self.last_updated = updated
+            
             return True
-        except Exception:
+        except Exception as e:
+            print(f"Error in upsert_prices: {e}")
             return False
 
 

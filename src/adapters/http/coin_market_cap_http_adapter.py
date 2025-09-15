@@ -28,7 +28,8 @@ class CoinMarketCapHttpAdapter:
                 tehran_tz = pytz.timezone('Asia/Tehran')
                 dt = tehran_tz.localize(dt)
             return dt
-        except:
+        except Exception as e:
+            print(f"Error parsing last_updated '{last_updated}': {e}")
             return None
 
     async def fetch(self, symbols: List[str]) -> List[Dict[str, Any]]:
