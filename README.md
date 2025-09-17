@@ -1,132 +1,280 @@
-Data Processor (Cryptocurrency Price Fetcher)
+# Data Processing Framework
 
-Production-ready, idempotent ETL that fetches cryptocurrency prices from CoinMarketCap and stores hourly snapshots in ClickHouse.
+A flexible, functional programming-based data processing framework inspired by Spring Boot patterns, designed for building robust ETL/ELT pipelines.
 
-Key features
-- Tehran timezone (+03:30) for all timestamps
-- Hour-based idempotency with key (symbol, datetime)
-- ReplacingMergeTree(version) engine with explicit UPSERT logic
-- Date/Datetime stored as String for BI friendliness
-- Modular ETL (adapters/extractors/transformers/loaders/crons)
-- Poetry for dependency and environment management
-- Backfill support and cron management by job name
+## 🏗️ Architecture
 
-Project layout (src/)
+The framework follows a modular, Spring Boot-inspired structure:
+
 ```
-configurations/
-  config.py
-adapters/
-  _bases/
-    clickhouse_adapter.py
-    http_adapter.py
-  http/
-    coin_market_cap_http_adapter.py
-  clickhouse/
-    coin_market_cap_clickhouse_adapter.py
-extractors/
-  coin_market_cap_extractor.py
-transormers/
-  coin_market_cap_transformer.py
-loaders/
-  coin_market_cap_loader.py
-crons/
-  registry.py
-  run.py
-  install.py
-main.py
-```
-
-ClickHouse schema
-- Engine: ReplacingMergeTree(version)
-- Primary key: (symbol, datetime)
-- Order by: (symbol, datetime, fetched_at)
-- Materialized (String) columns:
-  - datetime: formatDateTime(toStartOfHour(toDateTime(fetched_at)), '%Y-%m-%d %H:%i:%S')
-  - date: formatDateTime(toDate(toDateTime(fetched_at)), '%Y-%m-%d')
-
-Timezone policy
-- All application timestamps use Asia/Tehran.
-- Hour key is toStartOfHour(Tehran time). No second rounding for fetched_at.
-
-Idempotency policy
-- Per hour per symbol, perform key-based UPSERT:
-  - If (symbol, datetime) exists → ALTER UPDATE non-key columns
-  - Else → INSERT
-- Historical data is never deleted for production symbols.
-
-Requirements
-- Python 3.10–3.12
-- ClickHouse reachable from this host
-- CoinMarketCap API key
-
-Setup (Poetry)
-```
-cp env.example .env
-./run.sh check
-poetry install --no-root
+data-processor/
+├── src/                          # Main source code
+│   ├── core/                     # Core utilities
+│   │   ├── config.py            # Configuration management
+│   │   └── logging.py           # Logging utilities
+│   ├── extractors/              # Data extraction modules
+│   │   ├── http_extractor.py    # HTTP/API extractors
+│   │   └── clickhouse_extractor.py # ClickHouse extractors
+│   ├── loaders/                 # Data loading modules
+│   │   ├── clickhouse_loader.py # ClickHouse loaders
+│   │   └── console_loader.py    # Console/debug loaders
+│   ├── transformers/            # Data transformation modules
+│   │   └── lambda_transformer.py # Lambda-based transformers
+│   ├── pipelines/               # Pipeline orchestration
+│   │   ├── pipeline_factory.py  # Pipeline creation utilities
+│   │   └── cmc_pipeline.py      # CoinMarketCap pipeline implementation
+│   ├── utils/                   # Utility functions
+│   │   └── cron_helper.py       # Cron job management
+│   └── main.py                  # Main application entry point
+├── samples/                     # Sample implementations
+│   └── examples/                # Other examples
+│       └── weather_pipeline.py  # Weather data example
+├── scripts/                     # Execution scripts
+│   └── run.py                   # Pipeline runner
+├── tests/                       # Test suites
+│   ├── unit/                    # Unit tests
+│   └── integration/             # Integration tests
+└── run.sh                       # Main execution script
 ```
 
-Configuration (.env)
-- CLICKHOUSE_HOST, CLICKHOUSE_PORT, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD, CLICKHOUSE_DB
-- CMC_API_KEY
-- SYMBOLS=BTC,ETH,SOL (comma-separated)
+## 🚀 Features
 
-Core commands (run.sh)
-- check: verify Python/Poetry installed
-- test: run full pytest suite
-- setup_db: create database if missing
-- drop_db: drop data_warehouse.crypto_prices table
-- kill: kill any running cron processes
-- cron_run NAME: run a cron job once (default: cmc_hourly_prices)
-- setup_cron [NAME]: install cron for a job name (hourly at minute 0)
-- cron_backfill NAME HOURS: backfill a job for past HOURS (one-shot)
-- clean: kill + drop_db + setup_db + run cmc_hourly_prices once
+- **Functional Programming**: Lambda-based transformations and function passing
+- **Generic Components**: Reusable extractors, loaders, and transformers
+- **Pipeline Types**: Support for EL, ETL, and ELT patterns
+- **Multiple Data Sources**: HTTP APIs, ClickHouse, with placeholders for Kafka, Metabase
+- **Cron Integration**: Easy conversion of pipelines to scheduled jobs
+- **Spring Boot Patterns**: Clean separation of concerns and modular architecture
+- **Comprehensive Testing**: Unit and integration test suites
 
-Cron management
-- Registry: src/crons/registry.py (JOBS dict maps job names to async functions)
-- Runner: src/crons/run.py
-  - Run: `python -m crons.run cmc_hourly_prices`
-  - Backfill: `python -m crons.run cmc_hourly_prices backfill 24`
-- Installer: src/crons/install.py
-  - `./run.sh setup_cron cmc_hourly_prices` installs hourly cron
-  - Logs go to logs/cron.log
+## 📦 Installation
 
-Backfill
-- One-shot foreground operation that iterates past N hours and upserts with explicit hour keys.
-- Process exits when done. Can be wrapped with timeout if desired.
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd data-processor
+   ```
 
-Testing
-- `./run.sh test` (Poetry + pytest)
-- Includes idempotency integration tests and adapter/cron unit tests
+2. **Set up environment**:
+   ```bash
+   cp env.example .env
+   # Edit .env with your configuration
+   ```
 
-Deployment
-- Ensure .env configured (CLICKHOUSE_* and CMC_API_KEY)
-- Install deps and run tests: `./run.sh check && poetry install --no-root && ./run.sh test`
-- Install cron: `./run.sh setup_cron cmc_hourly_prices`
-- Optional backfill before enabling cron: `./run.sh cron_backfill cmc_hourly_prices 168` (last 7 days)
+3. **Install dependencies**:
+   ```bash
+   ./run.sh check
+   ```
 
-Developer guide: Build a new ETL pipeline
-1) HTTP adapter (source)
-   - Add an adapter in `src/adapters/http/<provider>_http_adapter.py` using `HttpAdapter`.
-2) Extractor
-   - Add `src/extractors/<provider>_extractor.py` with a function returning normalized rows.
-3) Transformer (optional)
-   - Add transformations in `src/transormers/<provider>_transformer.py`.
-4) Storage adapter (sink)
-   - Implement repository under `src/adapters/clickhouse/<provider>_clickhouse_adapter.py`.
-   - Follow the idempotent `upsert_prices(rows, target_hour=None)` signature.
-5) Loader
-   - Wrap storage logic in `src/loaders/<provider>_loader.py` with `ensure_ready()` and `load(rows)`.
-6) Cron job
-   - Register a job in `src/crons/registry.py` and map it in `JOBS`.
-   - Your job should orchestrate: extract → (transform) → load.
-7) Run & schedule
-   - `./run.sh cron_run <job_name>` to run once
-   - `./run.sh setup_cron <job_name>` to schedule hourly
-8) Backfill (optional)
-   - Extend `backfill()` in `registry.py` if needed for your job.
+## 🔧 Configuration
 
-Notes
-- Avoid deleting historical production data. Only UPDATE or INSERT by key.
-- Keep all timestamps in Tehran timezone.
-- Store Date/Datetime as String if BI tooling requires it.
+The framework uses environment variables for configuration. Copy `env.example` to `.env` and configure:
+
+```bash
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=logs/application.log
+
+# ClickHouse
+CLICKHOUSE_HOST=localhost
+CLICKHOUSE_PORT=9000
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=
+CLICKHOUSE_DATABASE=invex_data
+
+# APIs
+CMC_API_KEY=your_coinmarketcap_api_key
+WEATHER_API_KEY=your_weather_api_key
+```
+
+## 🎯 Usage
+
+### Running Pipelines
+
+```bash
+# List available pipelines
+./run.sh list
+
+# Run a specific pipeline
+./run.sh cron_run cmc_latest_quotes
+
+# Run weather data pipeline
+./run.sh cron_run weather_data
+```
+
+### Available Pipelines
+
+- **cmc_latest_quotes**: CoinMarketCap latest cryptocurrency quotes
+- **cmc_historical_data**: CoinMarketCap historical data
+- **weather_data**: Weather data for Tehran
+
+### Database Setup
+
+```bash
+# Setup ClickHouse database
+./run.sh setup_db
+
+# Drop database (clean slate)
+./run.sh drop_db
+```
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+./run.sh test
+
+# Run specific test
+python -m pytest tests/unit/test_pipeline_factory.py
+```
+
+## 🔨 Creating Custom Pipelines
+
+### 1. Create an Extractor
+
+```python
+from extractors.http_extractor import create_http_extractor
+
+# Create HTTP extractor
+extractor = create_http_extractor(
+    url="https://api.example.com/data",
+    headers={"Authorization": "Bearer token"},
+    name="My API Extractor"
+)
+```
+
+### 2. Create a Transformer
+
+```python
+from transformers.lambda_transformer import create_lambda_transformer
+
+# Create lambda transformer
+transformer = create_lambda_transformer(
+    lambda record: {
+        "id": record["id"],
+        "processed_at": datetime.now().isoformat(),
+        "value": record["amount"] * 2
+    },
+    name="My Transformer"
+)
+```
+
+### 3. Create a Loader
+
+```python
+from loaders.clickhouse_loader import create_clickhouse_loader
+
+# Create ClickHouse loader
+loader = create_clickhouse_loader(
+    table_name="my_table",
+    name="My Loader"
+)
+```
+
+### 4. Create a Pipeline
+
+```python
+from pipelines.pipeline_factory import create_etl_pipeline
+
+# Create ETL pipeline
+pipeline = create_etl_pipeline(
+    extractor=extractor,
+    transformer=transformer,
+    loader=loader,
+    name="My ETL Pipeline"
+)
+```
+
+### 5. Register as Cron Job
+
+```python
+from utils.cron_helper import register_cron_job
+
+# Register pipeline as cron job
+register_cron_job(
+    job_name="my_pipeline",
+    pipeline=pipeline,
+    schedule="0 */2 * * *",  # Every 2 hours
+    description="My custom pipeline"
+)
+```
+
+## 🏛️ Architecture Patterns
+
+### Spring Boot Inspired Structure
+
+- **Core**: Configuration and logging utilities
+- **Extractors**: Data source abstraction layer
+- **Loaders**: Data destination abstraction layer
+- **Transformers**: Data processing layer
+- **Pipelines**: Orchestration layer
+- **Utils**: Cross-cutting concerns
+
+### Functional Programming
+
+- Lambda-based transformations
+- Function passing for flexibility
+- Immutable data processing
+- Pure functions where possible
+
+### Pipeline Patterns
+
+- **EL**: Extract → Load (raw data)
+- **ETL**: Extract → Transform → Load (processed data)
+- **ELT**: Extract → Load → Transform (data warehouse pattern)
+
+## 🔄 Cron Job Management
+
+The framework provides easy cron job management:
+
+```python
+from utils.cron_helper import (
+    register_cron_job,
+    run_cron_job,
+    list_cron_jobs,
+    unregister_cron_job
+)
+
+# Register a job
+register_cron_job("my_job", pipeline, "0 */6 * * *")
+
+# Run a job
+success = run_cron_job("my_job")
+
+# List all jobs
+jobs = list_cron_jobs()
+```
+
+## 🧪 Testing Strategy
+
+- **Unit Tests**: Test individual components in isolation
+- **Integration Tests**: Test component interactions
+- **Pipeline Tests**: Test complete data flows
+- **Mocking**: External dependencies are mocked in tests
+
+## 📈 Extensibility
+
+The framework is designed for easy extension:
+
+1. **New Extractors**: Add to `src/extractors/`
+2. **New Loaders**: Add to `src/loaders/`
+3. **New Transformers**: Add to `src/transformers/`
+4. **New Pipelines**: Add to `samples/` or create new sample directories
+5. **New Utilities**: Add to `src/utils/`
+
+## 🚀 Future Enhancements
+
+- Kafka integration for streaming data
+- Metabase API integration
+- More data source connectors
+- Advanced scheduling options
+- Monitoring and alerting
+- Data quality validation
+
+## 📝 License
+
+[Add your license information here]
+
+## 🤝 Contributing
+
+[Add contribution guidelines here]
