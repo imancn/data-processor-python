@@ -1,109 +1,246 @@
-# src/transformers/lambda_transformer.py
-from typing import List, Dict, Any, Callable, Optional
+# src/transformers/transformers.py
+from typing import Callable, Optional
+import pandas as pd
+import numpy as np
 from datetime import datetime
-import pytz
 from core.logging import log_with_timestamp
 
 def apply_transform(
-    data: List[Dict[str, Any]],
-    transform_func: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+    data: pd.DataFrame,
+    transform_func: Callable[[pd.DataFrame], pd.DataFrame],
     name: str = "Transformer"
-) -> List[Dict[str, Any]]:
+) -> pd.DataFrame:
     """
-    Applies a transformation function to each record in the data.
+    Applies a transformation function to a pandas DataFrame.
     """
-    if not data:
+    if data.empty:
         log_with_timestamp(f"No data to transform for {name}", name, "info")
-        return []
+        return pd.DataFrame()
 
-    if not isinstance(data, list):
-        log_with_timestamp(f"Expected list data, got {type(data)} for {name}", name, "error")
-        return []
+    if not isinstance(data, pd.DataFrame):
+        log_with_timestamp(f"Expected DataFrame, got {type(data)} for {name}", name, "error")
+        return pd.DataFrame()
 
-    transformed_data = []
-    skipped_count = 0
-    
-    for i, record in enumerate(data):
-        try:
-            if not isinstance(record, dict):
-                log_with_timestamp(f"Record {i} is not a dictionary, skipping: {type(record)}", name, "warning")
-                skipped_count += 1
-                continue
-                
-            transformed_record = transform_func(record)
-            if transformed_record is not None:
-                transformed_data.append(transformed_record)
-            else:
-                skipped_count += 1
-        except Exception as e:
-            log_with_timestamp(f"Error transforming record {i} in {name}: {e}. Skipping record.", name, "error")
-            skipped_count += 1
-    
-    log_with_timestamp(f"Transformed {len(data)} records into {len(transformed_data)} records for {name} (skipped: {skipped_count})", name, "debug")
-    return transformed_data
+    try:
+        log_with_timestamp(f"Transforming {len(data)} records with {name}", name)
+        transformed_data = transform_func(data)
+        
+        if not isinstance(transformed_data, pd.DataFrame):
+            log_with_timestamp(f"Transform function must return DataFrame, got {type(transformed_data)}", name, "error")
+            return pd.DataFrame()
+            
+        log_with_timestamp(f"Successfully transformed {len(transformed_data)} records with {name}", name)
+        return transformed_data
+        
+    except Exception as e:
+        log_with_timestamp(f"Transform failed for {name}: {e}", name, "error")
+        return pd.DataFrame()
 
 def create_lambda_transformer(
-    lambda_func: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+    transform_func: Callable[[pd.DataFrame], pd.DataFrame],
     name: str = "Lambda Transformer"
-) -> Callable[..., List[Dict[str, Any]]]:
+):
     """
-    Factory function to create a transformer that applies a given lambda function to each record.
+    Factory function to create a lambda transformer with pandas DataFrame support.
     """
-    def transformer_func(data: List[Dict[str, Any]], *args, **kwargs) -> List[Dict[str, Any]]:
-        log_with_timestamp(f"Running {name}", name)
-        return apply_transform(data, lambda_func, name)
-    return transformer_func
+    def transformer(data: pd.DataFrame) -> pd.DataFrame:
+        return apply_transform(data, transform_func, name)
+    
+    return transformer
 
-def create_pipeline_transformer(
-    transform_pipeline: List[Callable[[Dict[str, Any]], Dict[str, Any]]],
-    name: str = "Pipeline Transformer"
-) -> Callable[..., List[Dict[str, Any]]]:
+def create_column_transformer(
+    column_mapping: dict,
+    drop_extra_columns: bool = True,
+    name: str = "Column Transformer"
+):
     """
-    Factory function to create a transformer that applies a sequence of transformation functions.
+    Create a transformer that maps/renames columns in a DataFrame.
+    
+    Args:
+        column_mapping: Dictionary mapping old column names to new column names
+        drop_extra_columns: Whether to drop columns not in the mapping
+        name: Name for logging
     """
-    def pipeline_func(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        current_record = record
-        for func in transform_pipeline:
-            if current_record is None:
-                break
-            current_record = func(current_record)
-        return current_record
+    def transform_func(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+            
+        # Rename columns according to mapping
+        df_transformed = df.rename(columns=column_mapping)
+        
+        # Drop extra columns if requested
+        if drop_extra_columns and column_mapping:
+            keep_columns = list(column_mapping.values())
+            df_transformed = df_transformed[keep_columns]
+            
+        return df_transformed
+    
+    return create_lambda_transformer(transform_func, name)
 
-    def transformer_func(data: List[Dict[str, Any]], *args, **kwargs) -> List[Dict[str, Any]]:
-        log_with_timestamp(f"Running {name} with {len(transform_pipeline)} steps", name)
-        return apply_transform(data, pipeline_func, name)
-    return transformer_func
+def create_type_converter(
+    type_mapping: dict,
+    name: str = "Type Converter"
+):
+    """
+    Create a transformer that converts column types in a DataFrame.
+    
+    Args:
+        type_mapping: Dictionary mapping column names to target types
+        name: Name for logging
+    """
+    def transform_func(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+            
+        df_converted = df.copy()
+        
+        for column, target_type in type_mapping.items():
+            if column in df_converted.columns:
+                try:
+                    if target_type == 'datetime':
+                        df_converted[column] = pd.to_datetime(df_converted[column])
+                    elif target_type == 'numeric':
+                        df_converted[column] = pd.to_numeric(df_converted[column], errors='coerce')
+                    elif target_type == 'string':
+                        df_converted[column] = df_converted[column].astype(str)
+                    elif target_type == 'category':
+                        df_converted[column] = df_converted[column].astype('category')
+                    else:
+                        df_converted[column] = df_converted[column].astype(target_type)
+                except Exception as e:
+                    log_with_timestamp(f"Failed to convert column {column} to {target_type}: {e}", name, "warning")
+                    
+        return df_converted
+    
+    return create_lambda_transformer(transform_func, name)
+def create_filter_transformer(
+    filter_func: Callable[[pd.DataFrame], pd.Series],
+    name: str = "Filter Transformer"
+):
+    """
+    Create a transformer that filters rows based on a condition.
+    
+    Args:
+        filter_func: Function that takes a DataFrame and returns a boolean Series
+        name: Name for logging
+    """
+    def transform_func(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+            
+        try:
+            mask = filter_func(df)
+            filtered_df = df[mask]
+            log_with_timestamp(f"Filtered {len(df) - len(filtered_df)} rows, kept {len(filtered_df)}", name)
+            return filtered_df
+        except Exception as e:
+            log_with_timestamp(f"Filter failed: {e}", name, "error")
+            return df
+    
+    return create_lambda_transformer(transform_func, name)
 
-def add_timestamp_metadata(record: Dict[str, Any]) -> Dict[str, Any]:
-    """Adds _processed_at timestamp to a record."""
-    tehran_tz = pytz.timezone('Asia/Tehran')
-    record['_processed_at'] = datetime.now(tehran_tz).isoformat()
-    return record
+def create_aggregation_transformer(
+    groupby_columns: list,
+    aggregation_dict: dict,
+    name: str = "Aggregation Transformer"
+):
+    """
+    Create a transformer that performs groupby aggregations.
+    
+    Args:
+        groupby_columns: Columns to group by
+        aggregation_dict: Dictionary mapping columns to aggregation functions
+        name: Name for logging
+    """
+    def transform_func(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+            
+        try:
+            grouped = df.groupby(groupby_columns).agg(aggregation_dict)
+            # Flatten multi-level column names
+            grouped.columns = ['_'.join(col).strip() if isinstance(col, tuple) else col for col in grouped.columns]
+            grouped = grouped.reset_index()
+            log_with_timestamp(f"Aggregated {len(df)} rows into {len(grouped)} groups", name)
+            return grouped
+        except Exception as e:
+            log_with_timestamp(f"Aggregation failed: {e}", name, "error")
+            return df
+    
+    return create_lambda_transformer(transform_func, name)
 
-def select_fields(fields: List[str]) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-    """Returns a lambda to select specific fields from a record."""
-    def _select(record: Dict[str, Any]) -> Dict[str, Any]:
-        return {field: record.get(field) for field in fields}
-    return _select
+def create_timezone_converter(
+    timezone_columns: list,
+    from_tz: str = 'UTC',
+    to_tz: str = 'Asia/Tehran',
+    name: str = "Timezone Converter"
+):
+    """
+    Create a transformer that converts timezone for datetime columns.
+    
+    Args:
+        timezone_columns: List of datetime columns to convert
+        from_tz: Source timezone
+        to_tz: Target timezone
+        name: Name for logging
+    """
+    def transform_func(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+            
+        df_converted = df.copy()
+        
+        for column in timezone_columns:
+            if column in df_converted.columns:
+                try:
+                    # Convert to datetime if not already
+                    if not pd.api.types.is_datetime64_any_dtype(df_converted[column]):
+                        df_converted[column] = pd.to_datetime(df_converted[column])
+                    
+                    # Convert timezone
+                    df_converted[column] = df_converted[column].dt.tz_localize(from_tz).dt.tz_convert(to_tz)
+                except Exception as e:
+                    log_with_timestamp(f"Failed to convert timezone for column {column}: {e}", name, "warning")
+                    
+        return df_converted
+    
+    return create_lambda_transformer(transform_func, name)
 
-def rename_fields(mapping: Dict[str, str]) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-    """Returns a lambda to rename fields in a record."""
-    def _rename(record: Dict[str, Any]) -> Dict[str, Any]:
-        new_record = {}
-        for old_name, new_name in mapping.items():
-            if old_name in record:
-                new_record[new_name] = record[old_name]
-            else:
-                new_record[old_name] = record.get(old_name)
-        return new_record
-    return _rename
-
-def validate_fields(required_fields: List[str]) -> Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]:
-    """Returns a lambda to validate required fields in a record. Returns None if invalid."""
-    def _validate(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        for field in required_fields:
-            if field not in record or record[field] is None:
-                log_with_timestamp(f"Missing required field '{field}'. Skipping record: {record}", "Validator", "warning")
-                return None
-        return record
-    return _validate
+def create_validation_transformer(
+    validation_rules: dict,
+    name: str = "Validation Transformer"
+):
+    """
+    Create a transformer that validates data according to rules.
+    
+    Args:
+        validation_rules: Dictionary mapping columns to validation functions
+        name: Name for logging
+    """
+    def transform_func(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+            
+        df_validated = df.copy()
+        validation_errors = []
+        
+        for column, validation_func in validation_rules.items():
+            if column in df_validated.columns:
+                try:
+                    mask = validation_func(df_validated[column])
+                    invalid_count = (~mask).sum()
+                    if invalid_count > 0:
+                        validation_errors.append(f"{column}: {invalid_count} invalid values")
+                        # Optionally filter out invalid rows
+                        # df_validated = df_validated[mask]
+                except Exception as e:
+                    validation_errors.append(f"{column}: validation error - {e}")
+        
+        if validation_errors:
+            log_with_timestamp(f"Validation issues: {'; '.join(validation_errors)}", name, "warning")
+        else:
+            log_with_timestamp("All validations passed", name)
+            
+        return df_validated
+    
+    return create_lambda_transformer(transform_func, name)

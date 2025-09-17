@@ -26,24 +26,9 @@ check_dependencies() {
         error "Python3 is not installed"
         exit 1
     fi
-    if [ ! -x "$PROJECT_DIR/.venv/bin/python" ]; then
-        log "Creating virtualenv..."
-        python3 -m venv "$PROJECT_DIR/.venv"
-    fi
-    PY="$PROJECT_DIR/.venv/bin/python"
-    "$PY" -m pip install -U pip >/dev/null 2>&1 || true
-    # Ensure runtime deps
-    "$PY" - <<'PY'
-import sys
-def ensure(pkg):
-    try:
-        __import__(pkg)
-    except Exception:
-        import subprocess
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', pkg])
-for p in ['aiohttp','clickhouse-driver','pytz']:
-    ensure(p)
-PY
+    # Use system Python directly
+    PY="python3"
+    log "Using system Python: $PY"
     log "Dependencies check completed"
 }
 
@@ -59,13 +44,13 @@ run_tests() {
 cron_run() {
     JOB_NAME="${1:-cmc_latest_quotes}"
     log "Running cron job: $JOB_NAME"
-    PY="$PROJECT_DIR/.venv/bin/python"
-    (cd "$PROJECT_DIR" && "$PY" scripts/run.py run "$JOB_NAME")
+    PY="python3"
+    (cd "$PROJECT_DIR" && PYTHONPATH="/home/iman/.local/lib/python3.12/site-packages:$PYTHONPATH" "$PY" scripts/run.py run "$JOB_NAME")
 }
 
 setup_database() {
     log "Setting up database..."
-    (cd "$PROJECT_DIR" && "$PROJECT_DIR/.venv/bin/python" - <<'PY'
+    (cd "$PROJECT_DIR" && "python3" - <<'PY'
 import sys
 sys.path.insert(0, 'src')
 from core.config import config
@@ -89,7 +74,7 @@ PY
 
 drop_database() {
     log "Dropping database..."
-    (cd "$PROJECT_DIR" && "$PROJECT_DIR/.venv/bin/python" - <<'PY'
+    (cd "$PROJECT_DIR" && "python3" - <<'PY'
 import sys
 sys.path.insert(0, 'src')
 from core.config import config
@@ -126,6 +111,43 @@ kill_processes() {
     log "All processes killed"
 }
 
+migrate() {
+    log "Running database migrations..."
+    (cd "$PROJECT_DIR" && "python3" migrate.py run)
+}
+
+migrate_status() {
+    log "Checking migration status..."
+    (cd "$PROJECT_DIR" && "python3" migrate.py status)
+}
+
+backfill() {
+    DAYS="${1:-30}"
+    shift  # Remove days from arguments
+    
+    if [ $# -eq 0 ]; then
+        # No specific jobs provided, run all jobs
+        log "Running backfill for all jobs for $DAYS days..."
+        (cd "$PROJECT_DIR" && python3 backfill.py backfill_all --days "$DAYS")
+    else
+        # Specific jobs provided
+        log "Running backfill for jobs: $* for $DAYS days..."
+        (cd "$PROJECT_DIR" && python3 backfill.py backfill --days "$DAYS" --jobs "$@")
+    fi
+}
+
+
+backfill_list() {
+    log "Listing available jobs for backfill..."
+    (cd "$PROJECT_DIR" && python3 backfill.py list_jobs)
+}
+
+backfill_counts() {
+    log "Showing data counts..."
+    (cd "$PROJECT_DIR" && python3 backfill.py counts)
+}
+
+
 show_help() {
     echo "Data Processing Framework - Main Execution Script"
     echo ""
@@ -138,6 +160,12 @@ show_help() {
     echo "  list           List all available pipelines"
     echo "  setup_db       Setup database"
     echo "  drop_db        Drop database"
+    echo "  migrate        Run database migrations"
+    echo "  migrate_status Show migration status"
+    echo "  backfill [DAYS] [JOBS]  Backfill historical data (default: 30 days, all jobs)"
+    echo "  backfill_job JOB [DAYS]  Backfill specific job"
+    echo "  backfill_list              List available jobs for backfill"
+    echo "  backfill_counts            Show data counts in database"
     echo "  setup_cron [NAME]  Setup cron for pipeline name (default: cmc_latest_quotes)"
     echo "  kill           Kill all running processes"
     echo "  clean          Clean and restart (drop_db + kill + run_once)"
@@ -146,7 +174,6 @@ show_help() {
     echo "Available pipelines:"
     echo "  - cmc_latest_quotes    CMC latest cryptocurrency quotes"
     echo "  - cmc_historical_data  CMC historical cryptocurrency data"
-    echo "  - weather_data         Weather data for Tehran"
     echo ""
 }
 
@@ -164,7 +191,7 @@ case "${1:-help}" in
         ;;
     list)
         check_dependencies
-        (cd "$PROJECT_DIR" && "$PROJECT_DIR/.venv/bin/python" scripts/run.py list)
+        (cd "$PROJECT_DIR" && PYTHONPATH="/home/iman/.local/lib/python3.12/site-packages:$PYTHONPATH" python3 scripts/run.py list)
         ;;
     setup_db)
         check_dependencies
@@ -177,12 +204,34 @@ case "${1:-help}" in
         check_dependencies
         setup_cron "${2:-cmc_latest_quotes}"
         ;;
+    migrate)
+        check_dependencies
+        migrate
+        ;;
+    migrate_status)
+        check_dependencies
+        migrate_status
+        ;;
+    backfill)
+        check_dependencies
+        shift  # Remove 'backfill' from arguments
+        backfill "$@"
+        ;;
+    backfill_list)
+        check_dependencies
+        backfill_list
+        ;;
+    backfill_counts)
+        check_dependencies
+        backfill_counts
+        ;;
     kill)
         kill_processes
         ;;
     clean)
         kill_processes
         drop_database
+        migrate
         setup_database
         cron_run "cmc_latest_quotes"
         ;;

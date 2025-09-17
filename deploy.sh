@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Usage: ./deploy.sh <ssh_user> <ssh_host> [--clean]
+# Example: ./deploy.sh e.soltani 172.30.63.35 --clean
+
 if [ $# -lt 2 ]; then
-  echo "Usage: $0 <ssh_user> <ssh_host> [job_name]"
+  echo "Usage: $0 <ssh_user> <ssh_host> [--clean]" >&2
   exit 1
 fi
 
 SSH_USER="$1"
 SSH_HOST="$2"
-JOB_NAME="${3:-cmc_hourly_prices}"
+CLEAN_FLAG="${3:-}"
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE_DIR="/home/${SSH_USER}/data-processor"
 
-echo "[deploy] Syncing project to ${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}"
+log() { echo -e "[deploy][$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+
+log "Step 1/6: Sync project to ${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}"
 rsync -az --delete \
   --exclude ".git" \
   --exclude ".venv" \
@@ -22,70 +27,93 @@ rsync -az --delete \
   --exclude "logs/*" \
   "${PROJECT_DIR}/" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/"
 
-echo "[deploy] Provisioning remote environment and installing cron"
-ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
-  "REMOTE_DIR='${REMOTE_DIR}' JOB_NAME='${JOB_NAME}' bash -s" <<'REMOTE'
+log "Step 2/6: Provision remote environment (venv, deps, .env, logs, optional clean)"
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" bash -lc "'
 set -e
-DEPLOY_DIR="$REMOTE_DIR"
-mkdir -p "$DEPLOY_DIR/logs"
-cd "$DEPLOY_DIR"
+DEPLOY_DIR="${REMOTE_DIR}"
+CLEAN_FLAG="${CLEAN_FLAG}"
 
-if [ ! -x "$DEPLOY_DIR/.venv/bin/python" ]; then
-  python3 -m venv "$DEPLOY_DIR/.venv"
+if [ "${CLEAN_FLAG}" = "--clean" ]; then
+  echo "[remote] Cleaning old crons and directory: ${DEPLOY_DIR}"
+  crontab -l 2>/dev/null | grep -v "${DEPLOY_DIR}" | crontab - 2>/dev/null || true
+  rm -rf "${DEPLOY_DIR}"
+  mkdir -p "${DEPLOY_DIR}"
 fi
 
-PY="$DEPLOY_DIR/.venv/bin/python"
-"$PY" -m pip install -U pip >/dev/null 2>&1 || true
-"$PY" -m pip install aiohttp clickhouse-driver pytz pytest pytest-asyncio >/dev/null 2>&1 || true
+mkdir -p "${DEPLOY_DIR}/logs"
+cd "${DEPLOY_DIR}"
 
-bash "$DEPLOY_DIR/run.sh" setup_cron "$JOB_NAME"
-echo "Deployment and cron installation completed."
-REMOTE
+if [ ! -x "${DEPLOY_DIR}/.venv/bin/python" ]; then
+  python3 -m venv "${DEPLOY_DIR}/.venv"
+fi
+PY="${DEPLOY_DIR}/.venv/bin/python"
+$PY -m pip install -U pip >/dev/null 2>&1 || true
+$PY -m pip install aiohttp clickhouse-driver pytz pandas >/dev/null 2>&1 || true
 
-echo "Done."
+# Prepare .env
+[ -f .env ] || cp env.example .env
+sed -i "s|^CLICKHOUSE_DATABASE=.*|CLICKHOUSE_DATABASE=data_warehouse|" .env
 
-#!/bin/bash
+# Ensure migrations directory exists
+mkdir -p migrations/sql
+'"
+
+log "Step 3/6: Run migrations"
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" bash -lc "'
 set -e
+cd "${REMOTE_DIR}"
+.venv/bin/python migrations/migration_manager.py run || true
+'"
 
-# optional local overrides
-[ -f .deploy.env ] && . .deploy.env
+log "Step 4/6: Run all jobs once (seed)"
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" bash -lc "'
+set -e
+cd "${REMOTE_DIR}"
+JOBS=(cmc_latest_quotes cmc_hourly cmc_daily cmc_weekly cmc_monthly cmc_yearly)
+for j in "${JOBS[@]}"; do
+  echo "[remote] Running job: $j"
+  .venv/bin/python scripts/run.py run "$j" || true
+done
+'"
 
-DEPLOY_USER=e.soltani
-DEPLOY_HOST=172.30.63.35
-DEPLOY_DIR=/home/e.soltani/data-processor
+log "Step 5/6: Install crons"
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" bash -lc "'
+set -e
+cd "${REMOTE_DIR}"
+mkdir -p logs
+cat > /tmp/data-processor-cron <<CRONTAB
+# data-processor crons
+*/5 * * * * cd ${REMOTE_DIR} && ${REMOTE_DIR}/.venv/bin/python scripts/run.py run cmc_latest_quotes >> ${REMOTE_DIR}/logs/cron.log 2>&1
+0 * * * * cd ${REMOTE_DIR} && ${REMOTE_DIR}/.venv/bin/python scripts/run.py run cmc_hourly >> ${REMOTE_DIR}/logs/cron.log 2>&1
+0 0 * * * cd ${REMOTE_DIR} && ${REMOTE_DIR}/.venv/bin/python scripts/run.py run cmc_daily >> ${REMOTE_DIR}/logs/cron.log 2>&1
+0 0 * * 1 cd ${REMOTE_DIR} && ${REMOTE_DIR}/.venv/bin/python scripts/run.py run cmc_weekly >> ${REMOTE_DIR}/logs/cron.log 2>&1
+0 0 1 * * cd ${REMOTE_DIR} && ${REMOTE_DIR}/.venv/bin/python scripts/run.py run cmc_monthly >> ${REMOTE_DIR}/logs/cron.log 2>&1
+0 0 1 1 * cd ${REMOTE_DIR} && ${REMOTE_DIR}/.venv/bin/python scripts/run.py run cmc_yearly >> ${REMOTE_DIR}/logs/cron.log 2>&1
+CRONTAB
+crontab /tmp/data-processor-cron
+rm -f /tmp/data-processor-cron
+'"
 
-if ! command -v rsync >/dev/null 2>&1; then
-  echo "rsync is required" >&2
-  exit 1
-fi
-if ! command -v ssh >/dev/null 2>&1; then
-  echo "ssh is required" >&2
-  exit 1
-fi
+log "Step 6/6: Verify counts"
+ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" bash -lc "'
+set -e
+cd "${REMOTE_DIR}"
+.venv/bin/python - <<PY
+import sys
+sys.path.insert(0,'src')
+from core.config import config
+from clickhouse_driver import Client
+c=config.get_clickhouse_config()
+cl=Client(host=c['host'],port=c['port'],user=c['user'],password=c['password'],database=c['database'])
+for t in ['cmc_latest_quotes','cmc_hourly','cmc_daily','cmc_weekly','cmc_monthly','cmc_yearly']:
+    try:
+        cnt=cl.execute("SELECT count() FROM %s" % t)[0][0]
+        print(t, cnt)
+    except Exception as e:
+        print(t, 'ERR', e)
+PY
+'"
 
-echo "Removing any existing remote directory $DEPLOY_DIR and old crons"
-ssh "$DEPLOY_USER@$DEPLOY_HOST" "bash -lc 'set -e; crontab -l 2>/dev/null | grep -v "$DEPLOY_DIR" | grep -v crons.run | crontab - 2>/dev/null || true; rm -rf "$DEPLOY_DIR"; mkdir -p "$DEPLOY_DIR"'"
-
-echo "Syncing project to $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR"
-rsync -az --delete \
-  --exclude '.venv' \
-  --exclude '.git' \
-  --exclude '__pycache__' \
-  ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
-
-ssh "$DEPLOY_USER@$DEPLOY_HOST" "bash -lc 'set -e; \
-  cd \"$DEPLOY_DIR\"; \
-  # create venv if missing and install runtime deps\n  if [ ! -x \"$DEPLOY_DIR/.venv/bin/python\" ]; then python3 -m venv \"$DEPLOY_DIR/.venv\"; fi; \
-  \"$DEPLOY_DIR/.venv/bin/python\" -m pip install -U pip; \
-  \"$DEPLOY_DIR/.venv/bin/python\" -m pip install aiohttp clickhouse-driver pytz; \
-  # prepare env and logs\n  [ -f .env ] || cp env.example .env; \
-  sed -i \"s|^CLICKHOUSE_HOST=.*|CLICKHOUSE_HOST=127.0.0.1|\" .env; \
-  mkdir -p \"$DEPLOY_DIR/logs\"; \
-  # run once and install cron with absolute paths\n  cd src; \
-  \"$DEPLOY_DIR/.venv/bin/python\" -m crons.run cmc_hourly_prices || true; \
-  (crontab -l 2>/dev/null | grep -v \"$DEPLOY_DIR/.venv/bin/python -m crons.run\"; echo \"0 * * * * cd $DEPLOY_DIR/src && $DEPLOY_DIR/.venv/bin/python -m crons.run cmc_hourly_prices >> $DEPLOY_DIR/logs/cron.log 2>&1\") | crontab -; \
-  echo \"Deployed. Cron set hourly. Log: $DEPLOY_DIR/logs/cron.log\"'"
-
-echo "Done."
+log "Deployment complete. Logs at ${REMOTE_DIR}/logs/cron.log"
 
 

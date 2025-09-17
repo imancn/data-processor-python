@@ -1,0 +1,40 @@
+@startuml
+skinparam monochrome true
+skinparam packageStyle rectangle
+
+package core {
+  class Config
+  class Logging
+}
+
+package pipelines.tools.extractors {
+  class HttpExtractor
+}
+
+package pipelines.tools.transformers {
+  class LambdaTransformer
+}
+
+package pipelines.tools.loaders {
+  class ClickHouseLoader
+  class ClickHouseUpsertLoader
+}
+
+package pipelines {
+  class CMCPipeline
+  class PipelineFactory
+  class PipelineRegistry
+}
+
+Config -> CMCPipeline : provides settings
+HttpExtractor -> CMCPipeline : extract
+LambdaTransformer -> CMCPipeline : transform
+ClickHouseLoader -> CMCPipeline : load
+ClickHouseUpsertLoader -> CMCPipeline : upsert latest
+
+CMCPipeline -> "cmc_latest_quotes" : upsert latest
+CMCPipeline -> "cmc_{hourly,daily,weekly,monthly,yearly}" : insert JIT
+
+@enduml
+
+

@@ -16,50 +16,21 @@ from core.config import config
 from main import run_cron_job, list_cron_jobs, register_cron_job
 
 # Import pipelines
-from pipelines.cmc_pipeline import register_cmc_pipelines, get_cmc_pipeline
-from examples.weather_pipeline import create_weather_pipeline
+from pipelines.cmc_pipeline import register_cmc_pipelines, get_pipeline_registry
 
 def register_all_pipelines():
     """Register all available pipelines as cron jobs."""
     log_with_timestamp("Registering all pipelines as cron jobs...", "Run Script")
     
-    # Register CMC pipelines
-    register_cmc_pipelines()
-    
-    # Register CMC pipelines as cron jobs
-    from pipelines.cmc_pipeline import _pipeline_registry
-    for name, pipeline in _pipeline_registry.items():
-        register_cron_job(
-            job_name=name,
-            pipeline=pipeline,
-            schedule="0 */6 * * *",  # Every 6 hours
-            description=f"CMC {name} pipeline"
-        )
-    
-    # Register weather pipeline as cron job
-    weather_pipeline = create_weather_pipeline()
-    register_cron_job(
-        job_name="weather_data",
-        pipeline=weather_pipeline,
-        schedule="0 */2 * * *",  # Every 2 hours
-        description="Weather data pipeline"
-    )
+    # Use the main.py registration which has proper time scope schedules
+    from main import register_all_pipelines as main_register_all_pipelines
+    main_register_all_pipelines()
     
     log_with_timestamp(f"Registered {len(list_cron_jobs())} cron jobs", "Run Script")
 
 def run_pipeline(pipeline_name: str):
     """Run a specific pipeline."""
     log_with_timestamp(f"Running pipeline: {pipeline_name}", "Run Script")
-    
-    # Try to get from CMC pipelines first
-    cmc_pipeline = get_cmc_pipeline(pipeline_name)
-    if cmc_pipeline:
-        success = asyncio.run(cmc_pipeline())
-        if success:
-            log_with_timestamp(f"Successfully completed pipeline: {pipeline_name}", "Run Script")
-        else:
-            log_with_timestamp(f"Pipeline failed: {pipeline_name}", "Run Script", "error")
-        return success
     
     # Try to run as cron job
     if pipeline_name in list_cron_jobs():
@@ -71,12 +42,6 @@ def run_pipeline(pipeline_name: str):
 def list_available_pipelines():
     """List all available pipelines."""
     log_with_timestamp("Available pipelines:", "Run Script")
-    
-    # List CMC pipelines
-    from pipelines.cmc_pipeline import list_cmc_pipelines
-    cmc_pipelines = list_cmc_pipelines()
-    for pipeline in cmc_pipelines:
-        log_with_timestamp(f"  - {pipeline} (CMC)", "Run Script")
     
     # List cron jobs
     cron_jobs = list_cron_jobs()

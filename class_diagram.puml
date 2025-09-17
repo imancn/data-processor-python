@@ -1,169 +1,178 @@
-@startuml Data Processing Framework Class Diagram
+@startuml
+allowmixing
+skinparam monochrome true
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam wrapWidth 240
 
-!theme plain
-skinparam backgroundColor #FFFFFF
-skinparam classBackgroundColor #F8F9FA
-skinparam classBorderColor #343A40
-skinparam packageBackgroundColor #E9ECEF
-skinparam packageBorderColor #6C757D
-skinparam arrowColor #495057
-skinparam arrowThickness 2
-skinparam linetype ortho
-skinparam roundcorner 5
-skinparam classFontSize 10
-skinparam packageFontSize 12
-skinparam classAttributeFontSize 8
-skinparam classMethodFontSize 8
-skinparam classFontStyle bold
-skinparam packageFontStyle bold
-skinparam minClassWidth 100
-skinparam maxClassWidth 200
-skinparam minClassHeight 50
-skinparam maxClassHeight 150
-skinparam packagePadding 10
-skinparam classPadding 5
-skinparam margin 10
-skinparam classStereotypeFontSize 0
-skinparam classStereotypeFontStyle normal
-left to right direction
+title Data Processor – Architecture & Components
 
-package "Main Application" #F1F8E9 {
-    class MainApp #DCEDC8 {
-        +register_cron_job()
-        +run_cron_job() -> bool
-        +list_cron_jobs() -> Dict
-        +get_cron_job_status() -> Dict
-        +unregister_cron_job() -> bool
-        +register_all_pipelines()
-        +run_pipeline_by_name() -> bool
-        +main()
-    }
+package core {
+  class Config {
+    +load_env_file(env_file_path)
+    +get(key, default)
+    +get_clickhouse_config()
+    +get_cmc_api_config()
+    +log_level
+    +log_file
+  }
+  class Logging {
+    +setup_logging(level, file)
+    +log_with_timestamp(message, component, level)
+  }
 }
 
-package "Core" #E3F2FD {
-    class Config #BBDEFB {
-        +__init__()
-        -_load_env_config()
-        +get() -> Any
-        +log_level: str
-        +log_file: str
-        +timeout: int
-        +batch_size: int
-        +get_clickhouse_config()
-        +get_cmc_api_config()
-        +get_stock_api_config()
-        +get_weather_api_config()
-    }
-    
-    class Logging #BBDEFB {
-        +setup_logging()
-        +log_with_timestamp()
-    }
+package pipelines.tools.extractors as extractors {
+  class HttpExtractor {
+    +create_http_extractor(url, headers, params, name)
+  }
+  class ClickHouseExtractor {
+    +create_clickhouse_extractor(query, name)
+  }
 }
 
-package "Pipeline Factory" #E8F5E8 {
-    class PipelineFactory #C8E6C9 {
-        +create_el_pipeline() -> Callable
-        +create_etl_pipeline() -> Callable
-        +create_elt_pipeline() -> Callable
-        +run_pipeline() -> bool
-    }
+package pipelines.tools.transformers as transformers {
+  class Transformers {
+    +create_lambda_transformer(fn, name)
+    +create_type_converter(mapping)
+    +create_column_transformer(mapping)
+  }
 }
 
-package "CMC Pipeline" #FFEBEE {
-    class CMCPipeline #FFCDD2 {
-        +register_cmc_pipelines()
-        +get_cmc_pipeline()
-        +list_cmc_pipelines() -> List[str]
-        +transform_cmc_data() -> Dict
-    }
+package pipelines.tools.loaders as loaders {
+  class ClickHouseLoader {
+    +create_clickhouse_loader(table_name, name)
+    +load_to_clickhouse(data, table)
+  }
+  class ClickHouseUpsertLoader {
+    +create_clickhouse_upsert_loader(table, unique_keys, name)
+    +upsert_to_clickhouse(data, table, keys)
+  }
+  class ConsoleLoader {
+    +create_console_loader(name)
+  }
 }
 
-package "Extractors" #FFF3E0 {
-    class HttpExtractor #FFE0B2 {
-        +extract_from_http() -> List[Dict]
-        +extract_from_paginated_http() -> List[Dict]
-        +create_http_extractor() -> Callable
-        +create_paginated_http_extractor() -> Callable
-    }
-    
-    class ClickHouseExtractor #FFE0B2 {
-        +extract_from_clickhouse() -> List[Dict]
-        +create_clickhouse_extractor() -> Callable
-    }
+package pipelines {
+  class PipelineFactory {
+    +create_el_pipeline(extractor, loader, name)
+    +create_etl_pipeline(extractor, transformer, loader, name)
+  }
+  class PipelineRegistry {
+    +PIPELINE_REGISTRY
+  }
+  class CMCPipeline {
+    +create_cmc_pipeline(time_scope)
+    +create_cmc_latest_pipeline()
+    +create_cmc_historical_pipeline(scope)
+    +transform_cmc_data_from_api(df, scope)
+    +transform_cmc_data_from_latest(df, scope)
+    +register_cmc_pipelines()
+  }
 }
 
-package "Loaders" #F3E5F5 {
-    class ClickHouseLoader #E1BEE7 {
-        +load_to_clickhouse() -> bool
-        +create_clickhouse_loader() -> Callable
-        +create_clickhouse_upsert_loader() -> Callable
-    }
-    
-    class ConsoleLoader #E1BEE7 {
-        +load_to_console() -> bool
-        +create_console_loader() -> Callable
-    }
+package scripts {
+  class Runner <<script>> {
+    +scripts/run.py
+    +list
+    +run <pipeline_name>
+  }
 }
 
-package "Transformers" #E0F2F1 {
-    class LambdaTransformer #B2DFDB {
-        +apply_transform() -> List[Dict]
-        +create_lambda_transformer() -> Callable
-        +create_pipeline_transformer() -> Callable
-        +add_timestamp_metadata() -> Dict
-        +select_fields() -> Callable
-        +rename_fields() -> Callable
-        +validate_fields() -> Callable
-    }
+package migrations {
+  class MigrationManager {
+    +ClickHouseMigrationManager
+    +connect()
+    +run_migrations()
+    +execute_migration(file)
+    +status()
+  }
+  folder sql {
+    file "001_create_cmc_latest_quotes_table.sql"
+    file "002_create_cmc_hourly_table.sql"
+    file "003_create_cmc_daily_table.sql"
+    file "004_create_cmc_weekly_table.sql"
+    file "005_create_cmc_monthly_table.sql"
+    file "006_create_cmc_yearly_table.sql"
+    file "007_recreate_cmc_time_scoped_tables_float.sql"
+  }
 }
 
+package ops {
+  class Deploy <<shell>> {
+    +deploy.sh
+    +rsync → venv → .env → migrate → seed → crons
+  }
+  class RunSh <<shell>> {
+    +run.sh
+    +check | list | cron_run | setup_db | migrate
+  }
+}
 
-' Layout hints to minimize conflicts
-MainApp -[hidden]down-> Core
-Core -[hidden]down-> PipelineFactory
-PipelineFactory -[hidden]down-> CMCPipeline
-CMCPipeline -[hidden]down-> Extractors
-Extractors -[hidden]right-> Loaders
-Loaders -[hidden]right-> Transformers
+database "ClickHouse" as CH {
+  class cmc_latest_quotes <<table>>
+  class cmc_hourly <<table>>
+  class cmc_daily <<table>>
+  class cmc_weekly <<table>>
+  class cmc_monthly <<table>>
+  class cmc_yearly <<table>>
+}
 
-' Core Dependencies
-Config --> Logging : uses
+node "Server" as Server {
+  artifact "/home/<user>/data-processor" as Project
+  folder logs
+  file "logs/cron.log"
+}
 
-' Main Application Dependencies (top level)
-MainApp --> Config : uses
-MainApp --> Logging : uses
-MainApp --> PipelineFactory : uses
-MainApp --> CMCPipeline : uses
+' Relationships & Data Flow
+Config --> CMCPipeline : provides settings
+Logging ..> CMCPipeline : used by
+extractors.HttpExtractor --> CMCPipeline : extract
+transformers.Transformers --> CMCPipeline : transform
+loaders.ClickHouseUpsertLoader --> CMCPipeline : upsert latest
+loaders.ClickHouseLoader --> CMCPipeline : load historical
 
-' Pipeline Factory Dependencies
-PipelineFactory --> Logging : uses
+PipelineFactory --> CMCPipeline : builds pipelines
+PipelineRegistry .. CMCPipeline : registers
+Runner --> PipelineRegistry : list/run
 
-' CMC Pipeline Dependencies (grouped)
-CMCPipeline --> Config : uses
-CMCPipeline --> Logging : uses
-CMCPipeline --> PipelineFactory : uses
-CMCPipeline --> HttpExtractor : uses
-CMCPipeline --> ClickHouseLoader : uses
-CMCPipeline --> LambdaTransformer : uses
+CMCPipeline --> CH.cmc_latest_quotes : upsert (ReplacingMergeTree)
+CMCPipeline --> CH.cmc_hourly : insert (JIT)
+CMCPipeline --> CH.cmc_daily : insert (JIT)
+CMCPipeline --> CH.cmc_weekly : insert (JIT)
+CMCPipeline --> CH.cmc_monthly : insert (JIT)
+CMCPipeline --> CH.cmc_yearly : insert (JIT)
 
-' Tool Dependencies (grouped by type)
-HttpExtractor --> Config : uses
-HttpExtractor --> Logging : uses
-ClickHouseExtractor --> Config : uses
-ClickHouseExtractor --> Logging : uses
+MigrationManager --> CH : DDL migrations
+Deploy --> Server : install code/venv/crons
+RunSh --> Runner : invokes
+Runner --> Server.logs : writes
 
-ClickHouseLoader --> Config : uses
-ClickHouseLoader --> Logging : uses
-ConsoleLoader --> Logging : uses
+note right of CH.cmc_latest_quotes
+Primary key: symbol
+Engine: ReplacingMergeTree(last_updated)
+Partition: toYYYYMM(last_updated)
+Source of truth for latest
+end note
 
-LambdaTransformer --> Logging : uses
+note bottom of CH.cmc_hourly
+Engine: MergeTree
+Float64 numerics, Array(String) tags
+timestamp aligned to hour
+end note
 
-' External Dependencies (dotted lines)
-HttpExtractor ..> aiohttp : uses
-ClickHouseExtractor ..> clickhouse_driver : uses
-ClickHouseLoader ..> clickhouse_driver : uses
-Logging ..> pytz : uses
-LambdaTransformer ..> pytz : uses
+note as CRON
+Crons (server):
+ - latest: */5 * * * *
+ - hourly: 0 * * * *
+ - daily: 0 0 * * *
+ - weekly: 0 0 * * 1
+ - monthly: 0 0 1 * *
+ - yearly: 0 0 1 1 *
+end note
+
+Server .. CRON
 
 @enduml
+
+

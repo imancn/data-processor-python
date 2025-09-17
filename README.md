@@ -1,288 +1,89 @@
-# Data Processing Framework
+# Data Processor (Modular ETL Framework)
 
-A flexible, functional programming-based data processing framework inspired by Spring Boot patterns, designed for building robust ETL/ELT pipelines.
+A lightweight, modular ETL/EL framework for extracting data from HTTP (or other sources), transforming it with Pandas, and loading it into ClickHouse (or other sinks). Pipelines are composable and can be scheduled as cron jobs.
 
-## 🏗️ Architecture
+## Architecture
 
-The framework follows a modular, Spring Boot-inspired structure:
+- `src/core` – configuration (`config.py`), logging
+- `src/pipelines` – pipeline implementations, `pipeline_factory.py`, `pipeline_registry.py`
+- `src/pipelines/tools` – reusable extractors, transformers, loaders
+- `migrations/sql` – ClickHouse DDL migrations (optional)
+- `scripts/run.py` – pipeline runner (list/run by name)
+- `run.sh` – helper for local tasks
+- `deploy.sh` – one-shot deploy (rsync + venv + migrate + seed + crons)
+ - `docs/architecture/class_diagram.puml` – UML diagram
 
-### Class Diagram
+### UML Diagram
 
-![Data Processing Framework Class Diagram](https://www.plantuml.com/plantuml/png/ZPPTRzGw4yVlyodyq8k7wgYeBopTSe5eiucuA18IIES2eSWRJxC-TUp8dhGiHtptutWtZNUIalQYbCpFu__yno_-w91RR6kL_0ytK0Dh59SwSVTIDzpocgrvULzPqsgH6cKiEyh3JqIKYZjtCyAM-LL-FSAC5M3toCNRY-ktfn7I-2IyWb6kx2fBitm2ZBEzIoyNbwi8ujQQnttmxTNYT759WzysihpNu1mxZq9AQi1j0ynOt9We42ILncgmR44hout6h_8NiBE9YeRWEHrtZMZbkiM1MLBaCtWTWiR9rBXLmDP6YUdP9-Err6cNu6yfSEE5dyOn_ZEAdOSO7VS9PBL1jg3ZejZPOiAEBrm8gIi_8osbZomECjfAwWduAu85urirU3V711UqiJLNYO8xP6YO3KA5j52YD3f9zYhPgyzSQdRTD4gMl0kzyilwB5zcL-pVX36scu5rb8VOqIhDLkbo7-j-_h9GIOTWYz8QNVnZrg-Fes2he-_iv0DR6wE6kF93dm2t8rQon86eO00AXnpRIQpLH0UPZuhbIXMDRA3R28ugxWF5UbjeNiDKfffBlH_tE_aT6PeQ2zx4x28_prS79gP6tycA7TtShBBy9lQmAAIMM1IHa9D26IuAq0z56SRvM6pAJjErtaPccgfGy03gFNDe3x_VIGNaCyeQJ8llcTIHaMkEvQPmVg6HG6Y4yeV9nhGEOb4nK9S5R-GpKOUclFz3_14uRi2EYT_XTsJbhQaggIUzT81jKwW0XF6n3OyIDqLNk4DUDvFz-x9lFijvYSPkkrukyqMsFEXbJ-qXTfGkitVfLIoajC0H2XWMsgvdALUAhnMCINmvgd0MZLSoMS5anNvEd-hfjd-UtMJPGRMUw84kdgvMvzD7G5sINKNMng27d05aPAVsrd__xj3-652qNBixO-l02uuyFWj6XMK_qOR-k51MVf6T7fJr2R5vOaBXfpS7XS4kMDnPKnSRJqVAkZb_F8Csl9AQ8uZ9GRIR0IgW5pBJ-YZtpB3njacx_VkfsxylBZlQytDrHEYChBX9juOBs7Ne8blaYxqGAdY7-RruvXVdPQmsd9DeY51wNeybTkDWnksORni75gDXisuRxOnwYV80_b5s80RDCvv-w_V9pjZirDz5PmV6tl9wBNZ4-QFqV9Ml3evItZHgMs0FpVPVXQJ3W5bt-nt_aY5SYE7aBcf0JlP_T0Cew5Ql12NSiwSZT3Vx3FJ0bHGSAKPzJ_xl_ToQ5jb6QdGCJVTyb7NtMklkCUNbkQH_GvrytqWXGFyGvb5t-Oo5fFj58_IIISZ_AHyVqqdqzuWRpiLa-7EWmcFHO_kTcOH_fu1ucNKcX29Mq83sL2d19Vidpuc7-olxFMiT19m-FG-6ijTe6XQUCyU3TJvFIDcdYIFn33H4dHiZiNcHHleQE2oFffskCxvVIOsLDMq3uZXkrxXA6gLpq32LDOsHwsyQ6f_0qzpuG8aC-6QCcYwShRSCjmqS9uTYnXQCuyI4GUX4cbcATesMFKv5aMbHyHKmET7Oj-b5vEM2rPpwA0mY21QUJTJ4Dsy-C2vDzqoOAZ_6ecjEMFa0zfaYP-XUTWSrM_pLVnyNIOcFe4LRg_y0)
+![Architecture UML](https://www.plantuml.com/plantuml/png/ZLVTRjis5BxNKn2vw9JEKTAkxG0Z25eawP8XwO8umz0hWQQE9SuKgP97JhskmAxs0DiRzab6Kf95Mr6Mv4BKET_7yo_IRmrIZNKf8Yg4kY_vPoxpo2ovhAYc9IcLLApGgWI2keP0Kr6sf3dCS2s0Q618PIv201FKc7U8cizhX4kcv8p_0UGeWDnhMlt6Cop8orT7KOGS1P0pYfJSQCN06AN9jx_-9UyqApW2mre3UKPELLaf2H9D5BLk4AQiwaj46hCM8XSyzm92lXUAPYd8LRhW0k9kaLOKY_q6aGF6IrXFI0OBMWlinIaJd2qBLHj8cTyr3fKbIsd5TpH2vQc05OZ-rHcqRryt7bwfFETouw81hAjKDCBOaoV4aO8jxpaMAV8I3DAoYktJq1mcX7Nvc11FtFU6llR9gNW5Waim2IebJ0AVKLE6IXj23UdVWWHU85RddQ9paccW26bXTUc65TVQkbe0pK2R2V6LjKz9I_2Ez3LnYRnmYHpPE4nrl_sd6lIwt-_Hm2n7ceNI9JIXXUz1S7Uxuju5GSjvHjE062zaRxq7uhho3R42ZHPKqggobGinJYtgKeQRXRX78t4jsmRHBRyyaCahhnjFOyEDaSu5f2w8FfHkBb05X3YZI2V4uKUhzsjbGEF_MQuzQik12Qabj-LCxQIPBKTQyAWh4-8eEmufQPGOoK2Zwwm_sZjXOczQsNlVUkkTNK6a7IdUzEUahSz3FGBu82Dioo7zwy2RMyYvmTwTcykRywlB3-VfxVbFbxExsu_RURa-xOYxMIbPxmxo4bB3L0Nx0v2m2uCzTeWek46bEQD1WE5ccmWzsbKoNMXLkczbd2qcv0dOrei1NFjiWDuAnyI3-XgcUOLXTMzhAK6Ju-D6TNBIvQU57kfQ9jMwdGrki5bPAJbk3JL3TB9hg-IvfiYL3CrTTy9hAcdUzsW_IRk8DitAkidGHTIQJ_lzEoby1bOZz9euE2mCKgoxb12oKCADYFaaMXSSbEmT7Rr8XqN_L2lxJFtO9PQojyLu6J8ALMkn7eF-448poiUHhqBaFS1o7FewX9PAOZ6EVHDYrq0VyVN7L4C0xcSZQnWcNGX5qHDtQw-giEXdK0crTZrMW11zYsLUdfYYBQfPIqQ-_VqFMO5S-KNIBPgIWbyRWCmlc5RIEDDXDy-AeI7NmvqLLW1RaZ-9wsNxS7kaLc-NpNKZczjbQwuBoytVd1gRbhvFzzmnT7eHX3be6Ek8pzJ9IOXfMsH4cL4-gdDjCAhqXH_LkbA7IXULL9cDQ0Pw1Tf7qonzH5GZNr26PE-mK2KS7jS6zCcXIyH1rTv36zADLhy3mtwaXCfDrBMHUpbqEKxiQizP_OxSWcZcjk2L8S-Qo-rxeUwZzePwS72ozSMU4cjonJCmhaR8fJNGNHMJP1TR6yZ8V1trLxXa--8stBw5Hk7LADcw40qv6spKtaMIaTl0a5fxDMbwvG7wAD51IN_CHD7ksJoap6ikCjCVxD7W04sI7Kftc9YeFHpShWFQr4-GEnwYAEHx5owImJ3qSSUtK0dARFMkGUTmfm7snxPePsLAk6ouFr_UZO8pof-CTRFqPB2VhIUZtQmDmT7Ww6ie5dTsTXMSbb7xkNJgTYBzLaY584nbSEW-ZtweV8LcXOUsjNBGbLf2MBns6pU2hWptcYCOD_y8HFEyGA8M3zOikj6yf7hjRffJOjRbN8deNEPSmfGCgnWBQgbrbL64R3-weHgv2sbAK7sqVzVNEuYPgZK3PnrrZGLPADrD1SYCE0TRD-SAKPKEkTKO6sSsFaJltQ7qvXMHTGcQCpCXxxIcwtY6slgwJv3c9jhyO2HKy5n2Hb0Hj-MkNVUDl_tbGtJgiarYunEvFut8GUleb3m_V4sUD_zEt3Ws9KUXCAEyaHtrCjU1eV254pQTrafVT53NKRtGYWCtsnP9aiRHjrPJb-8_)
 
-**Source File**: [class_diagram.puml](./class_diagram.puml)
 
-The diagram shows the complete class structure and dependencies of the data processing framework.
+## Concepts
+
+- **Pipelines**: Compose extractor → transformer → loader
+- **Just-in-Time ingestion**: jobs can snapshot current data at scope boundaries (hourly/daily/weekly/...)
+- **Idempotency**: Prefer `ReplacingMergeTree` (e.g., keyed by business dimension + update timestamp) or upsert loader patterns for “latest” facts
+- **Migrations**: DDL managed by simple SQL files and a migration runner
+
+## Environment (.env)
 
 ```
-data-processor/
-├── src/                          # Main source code
-│   ├── core/                     # Core utilities
-│   │   ├── config.py            # Configuration management
-│   │   └── logging.py           # Logging utilities
-│   ├── extractors/              # Data extraction modules
-│   │   ├── http_extractor.py    # HTTP/API extractors
-│   │   └── clickhouse_extractor.py # ClickHouse extractors
-│   ├── loaders/                 # Data loading modules
-│   │   ├── clickhouse_loader.py # ClickHouse loaders
-│   │   └── console_loader.py    # Console/debug loaders
-│   ├── transformers/            # Data transformation modules
-│   │   └── lambda_transformer.py # Lambda-based transformers
-│   ├── pipelines/               # Pipeline orchestration
-│   │   ├── pipeline_factory.py  # Pipeline creation utilities
-│   │   └── cmc_pipeline.py      # CoinMarketCap pipeline implementation
-│   ├── utils/                   # Utility functions
-│   │   └── cron_helper.py       # Cron job management
-│   └── main.py                  # Main application entry point
-├── samples/                     # Sample implementations
-│   └── examples/                # Other examples
-│       └── weather_pipeline.py  # Weather data example
-├── scripts/                     # Execution scripts
-│   └── run.py                   # Pipeline runner
-├── tests/                       # Test suites
-│   ├── unit/                    # Unit tests
-│   └── integration/             # Integration tests
-└── run.sh                       # Main execution script
-```
-
-## 🚀 Features
-
-- **Functional Programming**: Lambda-based transformations and function passing
-- **Generic Components**: Reusable extractors, loaders, and transformers
-- **Pipeline Types**: Support for EL, ETL, and ELT patterns
-- **Multiple Data Sources**: HTTP APIs, ClickHouse, with placeholders for Kafka, Metabase
-- **Cron Integration**: Easy conversion of pipelines to scheduled jobs
-- **Spring Boot Patterns**: Clean separation of concerns and modular architecture
-- **Comprehensive Testing**: Unit and integration test suites
-
-## 📦 Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd data-processor
-   ```
-
-2. **Set up environment**:
-   ```bash
-   cp env.example .env
-   # Edit .env with your configuration
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   ./run.sh check
-   ```
-
-## 🔧 Configuration
-
-The framework uses environment variables for configuration. Copy `env.example` to `.env` and configure:
-
-```bash
-# Logging
-LOG_LEVEL=INFO
-LOG_FILE=logs/application.log
-
-# ClickHouse
-CLICKHOUSE_HOST=localhost
+CLICKHOUSE_HOST=127.0.0.1
 CLICKHOUSE_PORT=9000
-CLICKHOUSE_USER=default
-CLICKHOUSE_PASSWORD=
-CLICKHOUSE_DATABASE=invex_data
-
-# APIs
-CMC_API_KEY=your_coinmarketcap_api_key
-WEATHER_API_KEY=your_weather_api_key
+CLICKHOUSE_USER=data-processor
+CLICKHOUSE_PASSWORD=***
+CLICKHOUSE_DATABASE=data_warehouse
+# Optional API keys/settings for your extractors
+# API_KEY=***
+# API_BASE_URL=https://api.example.com
 ```
 
-## 🎯 Usage
+## Run Locally
 
-### Running Pipelines
+```
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -U pip aiohttp clickhouse-driver pandas pytz
 
-```bash
-# List available pipelines
-./run.sh list
+# List available jobs
+python scripts/run.py list
 
-# Run a specific pipeline
-./run.sh cron_run cmc_latest_quotes
-
-# Run weather data pipeline
-./run.sh cron_run weather_data
+# Run a pipeline by name
+python scripts/run.py run <pipeline_name>
 ```
 
-### Available Pipelines
+## Migrations (ClickHouse)
 
-- **cmc_latest_quotes**: CoinMarketCap latest cryptocurrency quotes
-- **cmc_historical_data**: CoinMarketCap historical data
-- **weather_data**: Weather data for Tehran
-
-### Database Setup
-
-```bash
-# Setup ClickHouse database
-./run.sh setup_db
-
-# Drop database (clean slate)
-./run.sh drop_db
+```
+python migrations/migration_manager.py status
+python migrations/migration_manager.py run
 ```
 
-## 🧪 Testing
+## Deploy
 
-```bash
-# Run all tests
-./run.sh test
-
-# Run specific test
-python -m pytest tests/unit/test_pipeline_factory.py
+```
+./deploy.sh <ssh_user> <ssh_host> [--clean]
 ```
 
-## 🔨 Creating Custom Pipelines
+Deploy script will:
+- rsync project → server
+- create/upgrade venv and install runtime deps
+- ensure `.env` and `CLICKHOUSE_DATABASE`
+- run migrations
+- run each job once (seed)
+- install crons
 
-### 1. Create an Extractor
+## Cron Schedules (example)
 
-```python
-from extractors.http_extractor import create_http_extractor
+- latest: every 5 min
+- hourly: at :00 every hour
+- daily: 00:00
+- weekly: Monday 00:00
+- monthly: 1st 00:00
+- yearly: Jan 1st 00:00
 
-# Create HTTP extractor
-extractor = create_http_extractor(
-    url="https://api.example.com/data",
-    headers={"Authorization": "Bearer token"},
-    name="My API Extractor"
-)
-```
+## Notes
 
-### 2. Create a Transformer
-
-```python
-from transformers.lambda_transformer import create_lambda_transformer
-
-# Create lambda transformer
-transformer = create_lambda_transformer(
-    lambda record: {
-        "id": record["id"],
-        "processed_at": datetime.now().isoformat(),
-        "value": record["amount"] * 2
-    },
-    name="My Transformer"
-)
-```
-
-### 3. Create a Loader
-
-```python
-from loaders.clickhouse_loader import create_clickhouse_loader
-
-# Create ClickHouse loader
-loader = create_clickhouse_loader(
-    table_name="my_table",
-    name="My Loader"
-)
-```
-
-### 4. Create a Pipeline
-
-```python
-from pipelines.pipeline_factory import create_etl_pipeline
-
-# Create ETL pipeline
-pipeline = create_etl_pipeline(
-    extractor=extractor,
-    transformer=transformer,
-    loader=loader,
-    name="My ETL Pipeline"
-)
-```
-
-### 5. Register as Cron Job
-
-```python
-from utils.cron_helper import register_cron_job
-
-# Register pipeline as cron job
-register_cron_job(
-    job_name="my_pipeline",
-    pipeline=pipeline,
-    schedule="0 */2 * * *",  # Every 2 hours
-    description="My custom pipeline"
-)
-```
-
-## 🏛️ Architecture Patterns
-
-### Spring Boot Inspired Structure
-
-- **Core**: Configuration and logging utilities
-- **Extractors**: Data source abstraction layer
-- **Loaders**: Data destination abstraction layer
-- **Transformers**: Data processing layer
-- **Pipelines**: Orchestration layer
-- **Utils**: Cross-cutting concerns
-
-### Functional Programming
-
-- Lambda-based transformations
-- Function passing for flexibility
-- Immutable data processing
-- Pure functions where possible
-
-### Pipeline Patterns
-
-- **EL**: Extract → Load (raw data)
-- **ETL**: Extract → Transform → Load (processed data)
-- **ELT**: Extract → Load → Transform (data warehouse pattern)
-
-## 🔄 Cron Job Management
-
-The framework provides easy cron job management:
-
-```python
-from utils.cron_helper import (
-    register_cron_job,
-    run_cron_job,
-    list_cron_jobs,
-    unregister_cron_job
-)
-
-# Register a job
-register_cron_job("my_job", pipeline, "0 */6 * * *")
-
-# Run a job
-success = run_cron_job("my_job")
-
-# List all jobs
-jobs = list_cron_jobs()
-```
-
-## 🧪 Testing Strategy
-
-- **Unit Tests**: Test individual components in isolation
-- **Integration Tests**: Test component interactions
-- **Pipeline Tests**: Test complete data flows
-- **Mocking**: External dependencies are mocked in tests
-
-## 📈 Extensibility
-
-The framework is designed for easy extension:
-
-1. **New Extractors**: Add to `src/extractors/`
-2. **New Loaders**: Add to `src/loaders/`
-3. **New Transformers**: Add to `src/transformers/`
-4. **New Pipelines**: Add to `samples/` or create new sample directories
-5. **New Utilities**: Add to `src/utils/`
-
-## 🚀 Future Enhancements
-
-- Kafka integration for streaming data
-- Metabase API integration
-- More data source connectors
-- Advanced scheduling options
-- Monitoring and alerting
-- Data quality validation
-
-## 📝 License
-
-[Add your license information here]
-
-## 🤝 Contributing
-
-[Add contribution guidelines here]
+- Idempotent “latest” facts are best modeled with `ReplacingMergeTree(<updated_at_column>)` and an upsert loader keyed by stable dimensions.
+- Historical/scope tables typically use `MergeTree` with Float64 numerics and `Array(String)` where appropriate.
+- Logs: server at `<project>/logs/cron.log`.

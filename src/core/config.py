@@ -2,6 +2,16 @@
 import os
 from typing import Dict, Any
 
+def load_env_file(env_file_path: str = '.env'):
+    """Load environment variables from .env file."""
+    if os.path.exists(env_file_path):
+        with open(env_file_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key] = value
+
 class Config:
     """
     Centralized configuration management for the application.
@@ -9,6 +19,7 @@ class Config:
     """
     def __init__(self):
         self._settings = {}
+        load_env_file()  # Load .env file first
         self._load_env_config()
 
     def _load_env_config(self):
@@ -25,9 +36,10 @@ class Config:
         self._settings['CLICKHOUSE_PASSWORD'] = os.getenv('CLICKHOUSE_PASSWORD', '')
         self._settings['CLICKHOUSE_DATABASE'] = os.getenv('CLICKHOUSE_DATABASE', 'invex_data')
 
-        # CoinMarketCap API configuration
+        # CoinMarketCap API configuration (Sandbox API for testing)
         self._settings['CMC_API_KEY'] = os.getenv('CMC_API_KEY')
-        self._settings['CMC_API_BASE_URL'] = os.getenv('CMC_API_BASE_URL', 'https://pro-api.coinmarketcap.com/v1')
+        self._settings['CMC_API_BASE_URL'] = os.getenv('CMC_API_BASE_URL', 'https://sandbox-api.coinmarketcap.com/v1')
+        self._settings['CMC_SYMBOLS'] = os.getenv('CMC_SYMBOLS', 'BTC,ETH,SOL,DOGE,SHIB,PEPE,BABYDOGE,BBL,ADA,MATIC,AVAX,DOT,LINK,UNI,LTC')
 
         # Example external API (e.g., for stock data)
         self._settings['STOCK_API_BASE_URL'] = os.getenv('STOCK_API_BASE_URL', 'https://api.stockdata.com/v1')

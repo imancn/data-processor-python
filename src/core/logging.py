@@ -1,7 +1,6 @@
 # src/core/logging.py
 import logging
-from datetime import datetime
-import pytz
+from datetime import datetime, timezone, timedelta
 import os
 
 # Ensure logs directory exists
@@ -26,7 +25,8 @@ def setup_logging(level: str = 'INFO', log_file: str = 'logs/application.log'):
 
 def log_with_timestamp(message: str, name: str = "Pipeline", level: str = "info"):
     """Log message with Tehran timestamp"""
-    tehran_tz = pytz.timezone('Asia/Tehran')
+    # Tehran is UTC+3:30
+    tehran_tz = timezone(timedelta(hours=3, minutes=30))
     timestamp = datetime.now(tehran_tz).strftime("%Y-%m-%d %H:%M:%S")
     log_message = f"[{timestamp}] {name}: {message}"
 
