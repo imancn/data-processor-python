@@ -1,0 +1,169 @@
+@startuml Data Processing Framework Class Diagram
+
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam classBackgroundColor #F8F9FA
+skinparam classBorderColor #343A40
+skinparam packageBackgroundColor #E9ECEF
+skinparam packageBorderColor #6C757D
+skinparam arrowColor #495057
+skinparam arrowThickness 2
+skinparam linetype ortho
+skinparam roundcorner 5
+skinparam classFontSize 10
+skinparam packageFontSize 12
+skinparam classAttributeFontSize 8
+skinparam classMethodFontSize 8
+skinparam classFontStyle bold
+skinparam packageFontStyle bold
+skinparam minClassWidth 100
+skinparam maxClassWidth 200
+skinparam minClassHeight 50
+skinparam maxClassHeight 150
+skinparam packagePadding 10
+skinparam classPadding 5
+skinparam margin 10
+skinparam classStereotypeFontSize 0
+skinparam classStereotypeFontStyle normal
+left to right direction
+
+package "Main Application" #F1F8E9 {
+    class MainApp #DCEDC8 {
+        +register_cron_job()
+        +run_cron_job() -> bool
+        +list_cron_jobs() -> Dict
+        +get_cron_job_status() -> Dict
+        +unregister_cron_job() -> bool
+        +register_all_pipelines()
+        +run_pipeline_by_name() -> bool
+        +main()
+    }
+}
+
+package "Core" #E3F2FD {
+    class Config #BBDEFB {
+        +__init__()
+        -_load_env_config()
+        +get() -> Any
+        +log_level: str
+        +log_file: str
+        +timeout: int
+        +batch_size: int
+        +get_clickhouse_config()
+        +get_cmc_api_config()
+        +get_stock_api_config()
+        +get_weather_api_config()
+    }
+    
+    class Logging #BBDEFB {
+        +setup_logging()
+        +log_with_timestamp()
+    }
+}
+
+package "Pipeline Factory" #E8F5E8 {
+    class PipelineFactory #C8E6C9 {
+        +create_el_pipeline() -> Callable
+        +create_etl_pipeline() -> Callable
+        +create_elt_pipeline() -> Callable
+        +run_pipeline() -> bool
+    }
+}
+
+package "CMC Pipeline" #FFEBEE {
+    class CMCPipeline #FFCDD2 {
+        +register_cmc_pipelines()
+        +get_cmc_pipeline()
+        +list_cmc_pipelines() -> List[str]
+        +transform_cmc_data() -> Dict
+    }
+}
+
+package "Extractors" #FFF3E0 {
+    class HttpExtractor #FFE0B2 {
+        +extract_from_http() -> List[Dict]
+        +extract_from_paginated_http() -> List[Dict]
+        +create_http_extractor() -> Callable
+        +create_paginated_http_extractor() -> Callable
+    }
+    
+    class ClickHouseExtractor #FFE0B2 {
+        +extract_from_clickhouse() -> List[Dict]
+        +create_clickhouse_extractor() -> Callable
+    }
+}
+
+package "Loaders" #F3E5F5 {
+    class ClickHouseLoader #E1BEE7 {
+        +load_to_clickhouse() -> bool
+        +create_clickhouse_loader() -> Callable
+        +create_clickhouse_upsert_loader() -> Callable
+    }
+    
+    class ConsoleLoader #E1BEE7 {
+        +load_to_console() -> bool
+        +create_console_loader() -> Callable
+    }
+}
+
+package "Transformers" #E0F2F1 {
+    class LambdaTransformer #B2DFDB {
+        +apply_transform() -> List[Dict]
+        +create_lambda_transformer() -> Callable
+        +create_pipeline_transformer() -> Callable
+        +add_timestamp_metadata() -> Dict
+        +select_fields() -> Callable
+        +rename_fields() -> Callable
+        +validate_fields() -> Callable
+    }
+}
+
+
+' Layout hints to minimize conflicts
+MainApp -[hidden]down-> Core
+Core -[hidden]down-> PipelineFactory
+PipelineFactory -[hidden]down-> CMCPipeline
+CMCPipeline -[hidden]down-> Extractors
+Extractors -[hidden]right-> Loaders
+Loaders -[hidden]right-> Transformers
+
+' Core Dependencies
+Config --> Logging : uses
+
+' Main Application Dependencies (top level)
+MainApp --> Config : uses
+MainApp --> Logging : uses
+MainApp --> PipelineFactory : uses
+MainApp --> CMCPipeline : uses
+
+' Pipeline Factory Dependencies
+PipelineFactory --> Logging : uses
+
+' CMC Pipeline Dependencies (grouped)
+CMCPipeline --> Config : uses
+CMCPipeline --> Logging : uses
+CMCPipeline --> PipelineFactory : uses
+CMCPipeline --> HttpExtractor : uses
+CMCPipeline --> ClickHouseLoader : uses
+CMCPipeline --> LambdaTransformer : uses
+
+' Tool Dependencies (grouped by type)
+HttpExtractor --> Config : uses
+HttpExtractor --> Logging : uses
+ClickHouseExtractor --> Config : uses
+ClickHouseExtractor --> Logging : uses
+
+ClickHouseLoader --> Config : uses
+ClickHouseLoader --> Logging : uses
+ConsoleLoader --> Logging : uses
+
+LambdaTransformer --> Logging : uses
+
+' External Dependencies (dotted lines)
+HttpExtractor ..> aiohttp : uses
+ClickHouseExtractor ..> clickhouse_driver : uses
+ClickHouseLoader ..> clickhouse_driver : uses
+Logging ..> pytz : uses
+LambdaTransformer ..> pytz : uses
+
+@enduml
