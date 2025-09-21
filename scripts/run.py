@@ -11,12 +11,12 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'samples'))
 
-from core.logging import setup_logging, log_with_timestamp
+from core.logging import setup_logging, log_with_timestamp, get_job_log_path
 from core.config import config
 from main import run_cron_job, list_cron_jobs, register_cron_job
 
-# Import pipelines
-from pipelines.cmc_pipeline import register_cmc_pipelines, get_pipeline_registry
+# Import pipelines - domain-specific pipelines should be added here
+# from pipelines.example_pipeline import register_example_pipelines
 
 def register_all_pipelines():
     """Register all available pipelines as cron jobs."""
@@ -50,7 +50,7 @@ def list_available_pipelines():
 
 def main():
     """Main entry point."""
-    # Setup logging
+    # Setup logging (high-level app log)
     setup_logging(config.log_level, config.log_file)
     
     log_with_timestamp("Starting Data Processing Framework", "Run Script")
@@ -70,7 +70,17 @@ def main():
             log_with_timestamp("Please specify a pipeline name", "Run Script", "error")
             return
         pipeline_name = sys.argv[2]
+        # Switch to per-job log file temporarily
+        from logging import getLogger, FileHandler
+        import logging as _logging
+        job_log_path = get_job_log_path(pipeline_name)
+        fh = FileHandler(job_log_path)
+        fh.setLevel(_logging.DEBUG)
+        fh.setFormatter(_logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
+        root_logger = getLogger()
+        root_logger.addHandler(fh)
         run_pipeline(pipeline_name)
+        root_logger.removeHandler(fh)
     elif command == "list":
         list_available_pipelines()
     else:

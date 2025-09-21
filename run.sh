@@ -33,16 +33,38 @@ check_dependencies() {
 }
 
 run_tests() {
-    log "Running tests..."
-    PY="$PROJECT_DIR/.venv/bin/python"
-    "$PY" -m pip install -U pytest pytest-asyncio >/dev/null 2>&1 || true
-    log "Running pytest suite..."
-    "$PY" -m pytest -q || { error "Tests failed"; exit 1; }
-    log "All tests completed successfully!"
+    local category="${1:-all}"
+    log "Running tests for category: $category"
+    PY="python3"
+    (cd "$PROJECT_DIR" && "$PY" tests/framework/run_tests.py "$category")
+}
+
+list_test_categories() {
+    log "Listing available test categories..."
+    PY="python3"
+    (cd "$PROJECT_DIR" && "$PY" tests/framework/run_tests.py --list)
+}
+
+create_test_template() {
+    if [ -z "$1" ] || [ -z "$2" ]; then
+        error "Category and test name are required. Usage: ./run.sh create_test CATEGORY TEST_NAME"
+        echo "Available categories:"
+        (cd "$PROJECT_DIR" && python3 tests/test_runner.py --list)
+        exit 1
+    fi
+    local category="$1"
+    local test_name="$2"
+    log "Creating test template for category: $category, name: $test_name"
+    PY="python3"
+    (cd "$PROJECT_DIR" && "$PY" tests/test_runner.py --create "$category" "$test_name")
 }
 
 cron_run() {
-    JOB_NAME="${1:-cmc_latest_quotes}"
+    if [ -z "$1" ]; then
+        error "Job name is required. Use: ./run.sh list to see available jobs"
+        exit 1
+    fi
+    JOB_NAME="$1"
     log "Running cron job: $JOB_NAME"
     PY="python3"
     (cd "$PROJECT_DIR" && PYTHONPATH="/home/iman/.local/lib/python3.12/site-packages:$PYTHONPATH" "$PY" scripts/run.py run "$JOB_NAME")
@@ -54,17 +76,17 @@ setup_database() {
 import sys
 sys.path.insert(0, 'src')
 from core.config import config
-from clickhouse_driver import Client
+import clickhouse_connect
 
 def setup():
     ch_config = config.get_clickhouse_config()
-    client = Client(
+    client = clickhouse_connect.get_client(
         host=ch_config['host'],
         port=ch_config['port'],
-        user=ch_config['user'],
+        username=ch_config['user'],
         password=ch_config['password']
     )
-    client.execute(f"CREATE DATABASE IF NOT EXISTS {ch_config['database']}")
+    client.command(f"CREATE DATABASE IF NOT EXISTS {ch_config['database']}")
     print('✅ Database setup completed')
 
 setup()
@@ -78,20 +100,20 @@ drop_database() {
 import sys
 sys.path.insert(0, 'src')
 from core.config import config
-from clickhouse_driver import Client
+import clickhouse_connect
 
 def drop():
     ch_config = config.get_clickhouse_config()
-    client = Client(
+    client = clickhouse_connect.get_client(
         host=ch_config['host'],
         port=ch_config['port'],
-        user=ch_config['user'],
+        username=ch_config['user'],
         password=ch_config['password']
     )
-    client.execute(f"DROP TABLE IF EXISTS {ch_config['database']}.cmc_latest_quotes")
-    client.execute(f"DROP TABLE IF EXISTS {ch_config['database']}.cmc_historical_data")
-    client.execute(f"DROP TABLE IF EXISTS {ch_config['database']}.weather_data")
-    print('✅ Tables dropped')
+    # Drop entire database and recreate it
+    client.command(f"DROP DATABASE IF EXISTS {ch_config['database']}")
+    client.command(f"CREATE DATABASE IF NOT EXISTS {ch_config['database']}")
+    print('✅ Database dropped and recreated')
 
 drop()
 PY
@@ -99,7 +121,11 @@ PY
 }
 
 setup_cron() {
-    JOB_NAME="${1:-cmc_latest_quotes}"
+    if [ -z "$1" ]; then
+        error "Job name is required. Use: ./run.sh list to see available jobs"
+        exit 1
+    fi
+    JOB_NAME="$1"
     log "Setting up cron job: $JOB_NAME"
     mkdir -p "$PROJECT_DIR/logs"
     log "Cron job setup completed. Use: ./run.sh cron_run $JOB_NAME"
@@ -113,12 +139,12 @@ kill_processes() {
 
 migrate() {
     log "Running database migrations..."
-    (cd "$PROJECT_DIR" && "python3" migrate.py run)
+    (cd "$PROJECT_DIR" && "python3" migrations/migration_manager.py run)
 }
 
 migrate_status() {
     log "Checking migration status..."
-    (cd "$PROJECT_DIR" && "python3" migrate.py status)
+    (cd "$PROJECT_DIR" && "python3" migrations/migration_manager.py status)
 }
 
 backfill() {
@@ -128,23 +154,23 @@ backfill() {
     if [ $# -eq 0 ]; then
         # No specific jobs provided, run all jobs
         log "Running backfill for all jobs for $DAYS days..."
-        (cd "$PROJECT_DIR" && python3 backfill.py backfill_all --days "$DAYS")
+        (cd "$PROJECT_DIR" && python3 scripts/backfill.py backfill_all --days "$DAYS")
     else
         # Specific jobs provided
         log "Running backfill for jobs: $* for $DAYS days..."
-        (cd "$PROJECT_DIR" && python3 backfill.py backfill --days "$DAYS" --jobs "$@")
+        (cd "$PROJECT_DIR" && python3 scripts/backfill.py backfill --days "$DAYS" --jobs "$@")
     fi
 }
 
 
 backfill_list() {
     log "Listing available jobs for backfill..."
-    (cd "$PROJECT_DIR" && python3 backfill.py list_jobs)
+    (cd "$PROJECT_DIR" && python3 scripts/backfill.py list_jobs)
 }
 
 backfill_counts() {
     log "Showing data counts..."
-    (cd "$PROJECT_DIR" && python3 backfill.py counts)
+    (cd "$PROJECT_DIR" && python3 scripts/backfill.py counts)
 }
 
 
@@ -154,26 +180,36 @@ show_help() {
     echo "Usage: $0 [COMMAND]"
     echo ""
     echo "Commands:"
-    echo "  check          Check dependencies"
-    echo "  test           Run all tests (via venv)"
-    echo "  cron_run NAME  Run a pipeline by name (default: cmc_latest_quotes)"
-    echo "  list           List all available pipelines"
-    echo "  setup_db       Setup database"
-    echo "  drop_db        Drop database"
-    echo "  migrate        Run database migrations"
-    echo "  migrate_status Show migration status"
-    echo "  backfill [DAYS] [JOBS]  Backfill historical data (default: 30 days, all jobs)"
-    echo "  backfill_job JOB [DAYS]  Backfill specific job"
-    echo "  backfill_list              List available jobs for backfill"
-    echo "  backfill_counts            Show data counts in database"
-    echo "  setup_cron [NAME]  Setup cron for pipeline name (default: cmc_latest_quotes)"
-    echo "  kill           Kill all running processes"
-    echo "  clean          Clean and restart (drop_db + kill + run_once)"
-    echo "  help           Show this help"
+    echo "  check                   Check dependencies"
+    echo "  test [CATEGORY]         Run tests (default: all, use 'list_tests' to see categories)"
+    echo "  list_tests              List available test categories"
+    echo "  create_test CAT NAME    Create test template for category and name"
+    echo "  cron_run NAME          Run a pipeline by name"
+    echo "  list                   List all available pipelines"
+    echo "  setup_db               Setup database"
+    echo "  drop_db                Drop and recreate database"
+    echo "  migrate                Run database migrations"
+    echo "  migrate_status         Show migration status"
+    echo "  backfill [DAYS] [JOBS] Backfill historical data (default: 30 days, all jobs)"
+    echo "  backfill_list          List available jobs for backfill"
+    echo "  backfill_counts        Show data counts in database"
+    echo "  setup_cron NAME        Setup cron for pipeline name"
+    echo "  kill                   Kill all running processes"
+    echo "  clean                  Clean and restart (drop_db + kill + migrate)"
+    echo "  help                   Show this help"
     echo ""
-    echo "Available pipelines:"
-    echo "  - cmc_latest_quotes    CMC latest cryptocurrency quotes"
-    echo "  - cmc_historical_data  CMC historical cryptocurrency data"
+    echo "Test Categories:"
+    echo "  core                   Core framework tests (config, logging, validation, exceptions)"
+    echo "  pipelines              Pipeline system tests (discovery, factory, registry, tools)"
+    echo "  validation             Pydantic validation system tests"
+    echo "  migrations             Database migration system tests"
+    echo "  deployment             Deployment and operations tests"
+    echo "  integration            End-to-end integration tests"
+    echo "  performance            Performance and load tests"
+    echo "  all                    Run all available tests"
+    echo ""
+    echo "Note: Add your pipeline modules to src/pipelines/ directory"
+    echo "      Pipeline modules should follow the pattern: *_pipeline.py"
     echo ""
 }
 
@@ -183,11 +219,18 @@ case "${1:-help}" in
         ;;
     test)
         check_dependencies
-        run_tests
+        run_tests "$2"
+        ;;
+    list_tests)
+        list_test_categories
+        ;;
+    create_test)
+        check_dependencies
+        create_test_template "$2" "$3"
         ;;
     cron_run)
         check_dependencies
-        cron_run "${2:-cmc_latest_quotes}"
+        cron_run "$2"
         ;;
     list)
         check_dependencies
@@ -202,7 +245,7 @@ case "${1:-help}" in
         ;;
     setup_cron)
         check_dependencies
-        setup_cron "${2:-cmc_latest_quotes}"
+        setup_cron "$2"
         ;;
     migrate)
         check_dependencies
@@ -232,8 +275,6 @@ case "${1:-help}" in
         kill_processes
         drop_database
         migrate
-        setup_database
-        cron_run "cmc_latest_quotes"
         ;;
     help|*)
         show_help

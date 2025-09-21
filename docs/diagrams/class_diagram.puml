@@ -1,0 +1,317 @@
+@startuml
+!define RECTANGLE class
+skinparam packageStyle rectangle
+skinparam backgroundColor transparent
+skinparam classBackgroundColor White
+skinparam classBorderColor Black
+allowmixing
+
+title Data Processing Framework - Complete Architecture
+
+' Core Framework Components
+package "Core Framework" {
+    class Config {
+        +get(key, default)
+        +get_clickhouse_config()
+        +project_root
+        +log_level
+        +log_file
+    }
+    
+    class LoggingSystem {
+        +setup_logging(level, file)
+        +log_with_timestamp(msg, name, level, category)
+        +get_job_log_path(job_name)
+        -SYSTEM_LOG_DIR
+        -JOB_LOG_DIR
+    }
+}
+
+' Pipeline Architecture
+package "Pipeline System" {
+    abstract class Pipeline {
+        +name: string
+        +description: string
+        +run(): boolean
+    }
+    
+    class PipelineFactory {
+        +create_etl_pipeline(extractor, transformer, loader)
+        +create_el_pipeline(extractor, loader)
+    }
+    
+    class PipelineRegistry {
+        +register_pipeline(name, pipeline_data)
+        +get_pipeline_registry()
+        +discover_pipeline_modules()
+    }
+    
+    interface PipelineModule {
+        +register_pipelines()
+        +get_pipeline_registry()
+        +PIPELINE_REGISTRY: dict
+    }
+}
+
+' Pipeline Tools
+package "Pipeline Tools" {
+    package "Extractors" {
+        interface Extractor {
+            +extract(): DataFrame
+        }
+        
+        class HttpExtractor {
+            +url: string
+            +headers: dict
+            +params: dict
+            +timeout: int
+            +retries: int
+            +extract_from_http()
+            +extract_from_paginated_http()
+        }
+        
+        class ClickHouseExtractor {
+            +table_name: string
+            +query: string
+            +client: ClickHouseClient
+            +extract_from_clickhouse()
+        }
+    }
+    
+    package "Transformers" {
+        interface Transformer {
+            +transform(df): DataFrame
+        }
+        
+        class LambdaTransformer {
+            +transform_func: callable
+            +name: string
+            +transform()
+        }
+        
+        class TypeConverter {
+            +type_mapping: dict
+            +convert_types()
+        }
+        
+        class ColumnTransformer {
+            +column_mapping: dict
+            +transform_columns()
+        }
+    }
+    
+    package "Loaders" {
+        interface Loader {
+            +load(df): boolean
+        }
+        
+        class ClickHouseLoader {
+            +table_name: string
+            +batch_size: int
+            +client: ClickHouseClient
+            +load_to_clickhouse()
+        }
+        
+        class ClickHouseUpsertLoader {
+            +unique_key_columns: list
+            +upsert_to_clickhouse()
+        }
+        
+        class ConsoleLoader {
+            +print_summary: boolean
+            +load_to_console()
+        }
+    }
+}
+
+' Main Application
+package "Main Application" {
+    class MainApp {
+        +register_all_pipelines()
+        +run_pipeline_by_name(name)
+        +list_cron_jobs()
+        +ensure_database_schema()
+        -_cron_registry: dict
+    }
+    
+    class CronJobManager {
+        +register_cron_job(name, pipeline, schedule)
+        +run_cron_job(name)
+        +unregister_cron_job(name)
+        +get_cron_job_status(name)
+    }
+}
+
+' Migration System
+package "Migration System" {
+    class MigrationManager {
+        +run_migrations(): boolean
+        +get_migration_files(): list
+        +show_status()
+        +create_migrations_table()
+        -migrations_dir: string
+    }
+    
+    class Migration {
+        +filename: string
+        +version: string
+        +description: string
+        +sql_content: string
+        +executed_at: datetime
+    }
+}
+
+' Scripts and Operations
+package "Scripts & Operations" {
+    class RunScript {
+        +run_pipeline(name)
+        +list_available_pipelines()
+        +main()
+    }
+    
+    class BackfillManager {
+        +backfill_job(job_name, days)
+        +backfill_all_jobs(days)
+        +show_data_counts()
+        +get_available_jobs()
+    }
+    
+    class DeploymentScript {
+        +deploy_to_server(user, host, clean)
+        +sync_project_files()
+        +provision_environment()
+        +install_cron_jobs()
+        +verify_deployment()
+    }
+    
+    class RunShell {
+        +check_dependencies()
+        +setup_database()
+        +drop_database()
+        +run_migrations()
+        +kill_processes()
+        +setup_cron()
+    }
+}
+
+' Testing Framework
+package "Testing System" {
+    class TestResultsCollector {
+        +add_result(name, status, duration, details)
+        +save_results()
+        +results: dict
+    }
+    
+    class IntegrationTests {
+        +test_framework_integration()
+        +test_deployment_scenarios()
+        +test_end_to_end_workflow()
+    }
+    
+    class UnitTests {
+        +test_core_components()
+        +test_pipeline_factory()
+        +test_configuration()
+    }
+    
+    class TestRunner {
+        +run_tests()
+        +generate_summary_report()
+        +ensure_test_dependencies()
+    }
+}
+
+' External Systems
+cloud "External APIs" as ExtAPI {
+    interface "HTTP APIs"
+    interface "REST Services" 
+    interface "Data Sources"
+}
+
+database "ClickHouse Database" as CH {
+    entity "User Tables" {
+        - Dynamic table discovery
+        - ReplacingMergeTree engines
+        - Time-scoped data organization
+    }
+    entity "System Tables" {
+        - migrations
+        - Application metadata
+    }
+}
+
+node "Server Environment" as Server {
+    class "Cron Jobs" {
+        - Automatic pipeline scheduling
+        - Log rotation
+        - Health monitoring
+    }
+    
+    class "Log System" {
+        - logs/system/application.log
+        - logs/jobs/{job_name}.log
+        - logs/cron.log
+    }
+    
+    class "Project Directory" {
+        - /containers/data-processor
+        - Virtual environment
+        - Configuration files
+    }
+}
+
+' Relationships - Core Framework
+Config --> LoggingSystem : configures
+Config --> MainApp : provides settings
+LoggingSystem --> MainApp : logging services
+
+' Relationships - Pipeline System
+MainApp --> PipelineRegistry : discovers pipelines
+PipelineRegistry --> PipelineModule : loads modules
+PipelineFactory --> Pipeline : creates instances
+Pipeline --> Extractor : uses
+Pipeline --> Transformer : uses
+Pipeline --> Loader : uses
+
+' Relationships - Main Application
+MainApp --> CronJobManager : manages jobs
+MainApp --> MigrationManager : ensures schema
+CronJobManager --> Pipeline : executes
+
+' Relationships - Migration System
+MigrationManager --> Migration : manages
+MigrationManager --> CH : creates/updates schema
+
+' Relationships - Scripts
+RunScript --> MainApp : invokes
+BackfillManager --> MainApp : uses jobs
+DeploymentScript --> Server : deploys to
+RunShell --> MainApp : local operations
+
+' Relationships - Testing
+TestRunner --> IntegrationTests : runs
+TestRunner --> UnitTests : runs
+TestResultsCollector --> TestRunner : collects from
+IntegrationTests --> MainApp : tests
+UnitTests --> Config : tests
+UnitTests --> PipelineFactory : tests
+
+' Relationships - External
+HttpExtractor --> ExtAPI : fetches data
+ClickHouseExtractor --> CH : queries
+ClickHouseLoader --> CH : stores data
+ClickHouseUpsertLoader --> CH : upserts data
+
+' Relationships - Server
+Server --> MainApp : hosts
+Server --> CH : connects to
+
+note top of Pipeline : "Generic pipeline interface\nImplemented by user-defined\npipeline modules"
+
+note right of PipelineModule : "User implements:\n- register_pipelines()\n- get_pipeline_registry()\n- PIPELINE_REGISTRY dict"
+
+note bottom of CH : "Supports any table schema\nDynamic discovery\nIdempotent operations"
+
+note left of Server : "Idempotent deployment\nProcess management\nAutomatic cron setup"
+
+@enduml

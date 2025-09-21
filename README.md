@@ -1,89 +1,418 @@
-# Data Processor (Modular ETL Framework)
+# Data Processing Framework
 
-A lightweight, modular ETL/EL framework for extracting data from HTTP (or other sources), transforming it with Pandas, and loading it into ClickHouse (or other sinks). Pipelines are composable and can be scheduled as cron jobs.
+A **production-ready, domain-agnostic data processing platform** built with Python and ClickHouse. This framework provides a comprehensive foundation for building robust ETL/ELT pipelines with enterprise-grade features including automatic pipeline discovery, idempotent deployment, comprehensive testing, and operational monitoring.
 
-## Architecture
+## 🌟 Why This Framework?
 
-- `src/core` – configuration (`config.py`), logging
-- `src/pipelines` – pipeline implementations, `pipeline_factory.py`, `pipeline_registry.py`
-- `src/pipelines/tools` – reusable extractors, transformers, loaders
-- `migrations/sql` – ClickHouse DDL migrations (optional)
-- `scripts/run.py` – pipeline runner (list/run by name)
-- `run.sh` – helper for local tasks
-- `deploy.sh` – one-shot deploy (rsync + venv + migrate + seed + crons)
- - `docs/architecture/class_diagram.puml` – UML diagram
+- **🎯 Zero Business Logic**: Completely generic - works for any data processing use case
+- **🔄 Auto-Discovery**: Just add your pipeline files - framework handles the rest
+- **🚀 Production Ready**: Idempotent deployment, process management, health monitoring
+- **🧪 Test-Driven**: Comprehensive test suite with coverage reporting
+- **📊 Observable**: Structured logging, monitoring, and operational insights
+- **⚙️ Operational**: Complete toolkit for development, deployment, and maintenance
+- **🔧 Extensible**: Plugin architecture for extractors, transformers, and loaders
+- **📈 Scalable**: Designed for enterprise data processing workloads
 
-### UML Diagram
+## 🏆 Enterprise Features
 
-![Architecture UML](https://www.plantuml.com/plantuml/png/ZLVTRjis5BxNKn2vw9JEKTAkxG0Z25eawP8XwO8umz0hWQQE9SuKgP97JhskmAxs0DiRzab6Kf95Mr6Mv4BKET_7yo_IRmrIZNKf8Yg4kY_vPoxpo2ovhAYc9IcLLApGgWI2keP0Kr6sf3dCS2s0Q618PIv201FKc7U8cizhX4kcv8p_0UGeWDnhMlt6Cop8orT7KOGS1P0pYfJSQCN06AN9jx_-9UyqApW2mre3UKPELLaf2H9D5BLk4AQiwaj46hCM8XSyzm92lXUAPYd8LRhW0k9kaLOKY_q6aGF6IrXFI0OBMWlinIaJd2qBLHj8cTyr3fKbIsd5TpH2vQc05OZ-rHcqRryt7bwfFETouw81hAjKDCBOaoV4aO8jxpaMAV8I3DAoYktJq1mcX7Nvc11FtFU6llR9gNW5Waim2IebJ0AVKLE6IXj23UdVWWHU85RddQ9paccW26bXTUc65TVQkbe0pK2R2V6LjKz9I_2Ez3LnYRnmYHpPE4nrl_sd6lIwt-_Hm2n7ceNI9JIXXUz1S7Uxuju5GSjvHjE062zaRxq7uhho3R42ZHPKqggobGinJYtgKeQRXRX78t4jsmRHBRyyaCahhnjFOyEDaSu5f2w8FfHkBb05X3YZI2V4uKUhzsjbGEF_MQuzQik12Qabj-LCxQIPBKTQyAWh4-8eEmufQPGOoK2Zwwm_sZjXOczQsNlVUkkTNK6a7IdUzEUahSz3FGBu82Dioo7zwy2RMyYvmTwTcykRywlB3-VfxVbFbxExsu_RURa-xOYxMIbPxmxo4bB3L0Nx0v2m2uCzTeWek46bEQD1WE5ccmWzsbKoNMXLkczbd2qcv0dOrei1NFjiWDuAnyI3-XgcUOLXTMzhAK6Ju-D6TNBIvQU57kfQ9jMwdGrki5bPAJbk3JL3TB9hg-IvfiYL3CrTTy9hAcdUzsW_IRk8DitAkidGHTIQJ_lzEoby1bOZz9euE2mCKgoxb12oKCADYFaaMXSSbEmT7Rr8XqN_L2lxJFtO9PQojyLu6J8ALMkn7eF-448poiUHhqBaFS1o7FewX9PAOZ6EVHDYrq0VyVN7L4C0xcSZQnWcNGX5qHDtQw-giEXdK0crTZrMW11zYsLUdfYYBQfPIqQ-_VqFMO5S-KNIBPgIWbyRWCmlc5RIEDDXDy-AeI7NmvqLLW1RaZ-9wsNxS7kaLc-NpNKZczjbQwuBoytVd1gRbhvFzzmnT7eHX3be6Ek8pzJ9IOXfMsH4cL4-gdDjCAhqXH_LkbA7IXULL9cDQ0Pw1Tf7qonzH5GZNr26PE-mK2KS7jS6zCcXIyH1rTv36zADLhy3mtwaXCfDrBMHUpbqEKxiQizP_OxSWcZcjk2L8S-Qo-rxeUwZzePwS72ozSMU4cjonJCmhaR8fJNGNHMJP1TR6yZ8V1trLxXa--8stBw5Hk7LADcw40qv6spKtaMIaTl0a5fxDMbwvG7wAD51IN_CHD7ksJoap6ikCjCVxD7W04sI7Kftc9YeFHpShWFQr4-GEnwYAEHx5owImJ3qSSUtK0dARFMkGUTmfm7snxPePsLAk6ouFr_UZO8pof-CTRFqPB2VhIUZtQmDmT7Ww6ie5dTsTXMSbb7xkNJgTYBzLaY584nbSEW-ZtweV8LcXOUsjNBGbLf2MBns6pU2hWptcYCOD_y8HFEyGA8M3zOikj6yf7hjRffJOjRbN8deNEPSmfGCgnWBQgbrbL64R3-weHgv2sbAK7sqVzVNEuYPgZK3PnrrZGLPADrD1SYCE0TRD-SAKPKEkTKO6sSsFaJltQ7qvXMHTGcQCpCXxxIcwtY6slgwJv3c9jhyO2HKy5n2Hb0Hj-MkNVUDl_tbGtJgiarYunEvFut8GUleb3m_V4sUD_zEt3Ws9KUXCAEyaHtrCjU1eV254pQTrafVT53NKRtGYWCtsnP9aiRHjrPJb-8_)
+### **Deployment & Operations**
+- ✅ **Idempotent Deployment**: Safe, repeatable deployments with automatic cleanup
+- ✅ **Process Management**: Automatic process lifecycle and cron job management  
+- ✅ **Health Monitoring**: Post-deployment verification and continuous health checks
+- ✅ **Log Management**: Centralized, structured logging with job-specific logs
+- ✅ **Migration System**: Version-controlled database schema management
+- ✅ **Backfill System**: Historical data processing and monitoring
 
+### **Development & Testing**
+- ✅ **Auto-Discovery**: Zero-config pipeline registration and scheduling
+- ✅ **Test Framework**: Unit + Integration + E2E tests with coverage reporting
+- ✅ **Local Development**: Complete local development environment
+- ✅ **CI/CD Ready**: JUnit XML, coverage reports, and automation-friendly
+- ✅ **Documentation**: Comprehensive architecture and usage documentation
 
-## Concepts
+### **Architecture & Reliability**
+- ✅ **Plugin Architecture**: Extensible extractors, transformers, and loaders
+- ✅ **Error Handling**: Comprehensive error handling with retry logic
+- ✅ **Configuration Management**: Environment-based configuration with validation
+- ✅ **Security**: No hardcoded secrets, secure connection management
+- ✅ **Performance**: Optimized for high-throughput data processing
 
-- **Pipelines**: Compose extractor → transformer → loader
-- **Just-in-Time ingestion**: jobs can snapshot current data at scope boundaries (hourly/daily/weekly/...)
-- **Idempotency**: Prefer `ReplacingMergeTree` (e.g., keyed by business dimension + update timestamp) or upsert loader patterns for “latest” facts
-- **Migrations**: DDL managed by simple SQL files and a migration runner
-
-## Environment (.env)
+## 📁 Project Structure
 
 ```
-CLICKHOUSE_HOST=127.0.0.1
-CLICKHOUSE_PORT=9000
+data-processor/                   # 🏠 Production-Ready Data Processing Platform
+├── 📋 docs/                     # 📖 Complete Documentation
+│   ├── architecture/            # 🏗️ System Architecture
+│   ├── diagrams/                # 📊 Visual Diagrams
+│   ├── quick-start.md           # 🚀 Getting Started Guide
+│   ├── api-reference.md         # 📚 Complete API Reference
+│   └── developer-guide.md       # 🛠️ Development Guidelines
+├── 🧠 src/                      # 💻 Core Framework Source Code
+│   ├── core/                   # ⚙️ Framework Foundation
+│   │   ├── config.py          # 🔧 Configuration management & validation
+│   │   ├── logging.py         # 📝 Multi-level structured logging system
+│   │   ├── models.py          # 📊 Pydantic data models
+│   │   ├── exceptions.py      # ⚠️ Custom exception hierarchy
+│   │   └── validators.py      # ✅ Data validation utilities
+│   ├── pipelines/             # 🔄 Pipeline System (ADD YOUR PIPELINES HERE)
+│   │   ├── tools/             # 🛠️ Reusable Pipeline Components
+│   │   │   ├── extractors/    # 📥 Data Sources (HTTP, DB, Files)
+│   │   │   ├── transformers/  # 🔄 Data Processing
+│   │   │   └── loaders/       # 📤 Data Destinations
+│   │   ├── pipeline_factory.py # 🏭 ETL/ELT pipeline creation
+│   │   └── pipeline_registry.py # 📋 Pipeline registration system
+│   └── main.py                # 🚀 Main application & auto-discovery
+├── 🗄️ migrations/              # 📊 Database Schema Management
+│   ├── sql/                   # 📄 Versioned SQL migration files
+│   └── migration_manager.py   # ⚙️ Migration orchestration & tracking
+├── 📜 scripts/                 # 🔧 Utility Scripts
+│   ├── run.py                 # ▶️ Pipeline runner with job logging
+│   ├── backfill.py            # ⏮️ Historical data processing
+│   └── run_tests.py           # 🧪 Comprehensive test runner
+├── 🧪 tests/                   # 🔬 Comprehensive Test Suite
+│   ├── unit/                  # 🧩 Component unit tests
+│   ├── integration/           # 🔗 End-to-end system tests
+│   ├── performance/           # 📈 Performance and load tests
+│   └── results/               # 📊 Auto-generated test results
+├── 🚀 deploy.sh               # 🎯 Idempotent deployment automation
+├── ⚙️ run.sh                  # 🛠️ Local operations toolkit (14 commands)
+├── 📋 env.example             # 🔧 Environment configuration template
+└── 📄 requirements.txt        # 📦 Python dependencies
+```
+
+## 🚀 Quick Start
+
+### 1. Setup Environment
+
+```bash
+# Copy environment template
+cp env.example .env
+
+# Edit configuration
+vim .env
+```
+
+### 2. Install Dependencies
+
+```bash
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Setup database
+./run.sh setup_db
+./run.sh migrate
+```
+
+### 3. Create Your First Pipeline
+
+Create `src/pipelines/my_pipeline.py`:
+
+```python
+import pandas as pd
+from pipelines.pipeline_factory import create_etl_pipeline
+from pipelines.tools.extractors.http_extractor import create_http_extractor
+from pipelines.tools.loaders.console_loader import create_console_loader
+from pipelines.tools.transformers.transformers import create_lambda_transformer
+
+# Pipeline registry
+PIPELINE_REGISTRY = {}
+
+def create_my_pipeline():
+    """Create your custom pipeline."""
+    
+    # Create extractor
+    extractor = create_http_extractor(
+        url="https://api.example.com/data",
+        headers={"Accept": "application/json"},
+        name="My Data Extractor"
+    )
+    
+    # Create transformer
+    def transform_data(df):
+        df['processed_at'] = pd.Timestamp.now()
+        return df
+    
+    transformer = create_lambda_transformer(transform_data, "My Transformer")
+    
+    # Create loader
+    loader = create_console_loader("My Console Loader")
+    
+    # Create pipeline
+    pipeline = create_etl_pipeline(
+        extractor=extractor,
+        transformer=transformer,
+        loader=loader,
+        name="My Pipeline"
+    )
+    
+    return {
+        'pipeline': pipeline,
+        'description': 'My custom data pipeline',
+        'schedule': '0 * * * *',  # Hourly
+        'table_name': 'my_data'
+    }
+
+def register_pipelines():
+    """Register all pipelines in this module."""
+    PIPELINE_REGISTRY['my_pipeline'] = create_my_pipeline()
+
+def get_pipeline_registry():
+    """Get the pipeline registry."""
+    return PIPELINE_REGISTRY
+
+# Auto-register when module is imported
+register_pipelines()
+```
+
+### 4. Test Your Pipeline
+
+```bash
+# List pipelines (should now show your pipeline)
+./run.sh list
+
+# Run your pipeline
+./run.sh cron_run my_pipeline
+
+# Check logs
+tail -f logs/jobs/my_pipeline.log
+```
+
+### 5. Deploy to Production
+
+```bash
+# Deploy to remote server
+./deploy.sh username hostname
+
+# Verify deployment
+ssh username@hostname "cd data-processor && ./run.sh list"
+```
+
+## 🔧 Available Commands
+
+### Local Operations (`run.sh`)
+
+```bash
+./run.sh check                   # Check dependencies
+./run.sh test                    # Run all tests
+./run.sh cron_run NAME          # Run a pipeline
+./run.sh list                   # List available pipelines
+./run.sh setup_db               # Setup database
+./run.sh drop_db                # Drop and recreate database
+./run.sh migrate                # Run database migrations
+./run.sh migrate_status         # Show migration status
+./run.sh backfill [DAYS] [JOBS] # Backfill historical data
+./run.sh backfill_list          # List available jobs
+./run.sh backfill_counts        # Show data counts
+./run.sh setup_cron NAME        # Setup cron for pipeline
+./run.sh kill                   # Kill all running processes
+./run.sh clean                  # Clean and restart
+./run.sh help                   # Show help
+```
+
+### Deployment (`deploy.sh`)
+
+```bash
+./deploy.sh user host           # Deploy to server
+./deploy.sh user host --clean   # Deploy with cleanup
+```
+
+## 📊 Testing
+
+The framework includes comprehensive testing with detailed reporting:
+
+```bash
+# Run all tests
+./run.sh test
+
+# Run only unit tests
+./run.sh test unit
+
+# Run only integration tests
+./run.sh test integration
+
+# Run fast tests (exclude slow tests)
+./run.sh test --fast
+```
+
+Test results are saved in `tests/results/` with:
+- Test execution reports (JSON)
+- Code coverage reports (HTML + JSON)
+- JUnit XML for CI/CD integration
+
+## 🏗️ Architecture
+
+### System Design Philosophy
+This framework follows **clean architecture principles** with clear separation of concerns:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    🎯 Your Pipeline Logic                   │  ← Domain Layer
+├─────────────────────────────────────────────────────────────┤
+│  🔄 Pipeline Framework (Discovery, Factory, Registry)      │  ← Application Layer
+├─────────────────────────────────────────────────────────────┤
+│  🛠️ Tools (Extractors, Transformers, Loaders)             │  ← Service Layer
+├─────────────────────────────────────────────────────────────┤
+│  ⚙️ Core (Config, Logging, Migration, Cron)               │  ← Infrastructure Layer
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Patterns
+
+#### 🔍 **Auto-Discovery Pattern**
+- **Zero Configuration**: Just add `*_pipeline.py` files
+- **Dynamic Loading**: Framework discovers and registers automatically
+- **Convention Over Configuration**: Follow naming patterns, get functionality
+
+#### 🏭 **Factory Pattern**
+- **Pipeline Creation**: `create_etl_pipeline()`, `create_el_pipeline()`
+- **Component Factory**: Standardized creation of extractors, transformers, loaders
+- **Dependency Injection**: Components injected at runtime
+
+#### 📋 **Registry Pattern**
+- **Central Registration**: All pipelines registered in central registry
+- **Runtime Discovery**: Pipelines discovered and registered at startup
+- **Scheduling Integration**: Registry automatically creates cron jobs
+
+#### 🔌 **Plugin Architecture**
+- **Extractors**: HTTP, Database, File extractors
+- **Transformers**: Lambda, Type, Column transformers  
+- **Loaders**: ClickHouse, Console, File loaders
+- **Extensible**: Easy to add new components
+
+## 📝 Configuration
+
+Key environment variables in `.env`:
+
+```bash
+# ClickHouse Database
+CLICKHOUSE_HOST=172.30.63.35
+CLICKHOUSE_PORT=8123
 CLICKHOUSE_USER=data-processor
-CLICKHOUSE_PASSWORD=***
+CLICKHOUSE_PASSWORD=your_password
 CLICKHOUSE_DATABASE=data_warehouse
-# Optional API keys/settings for your extractors
-# API_KEY=***
-# API_BASE_URL=https://api.example.com
+
+# Logging
+LOG_LEVEL=INFO
+LOG_DIR=logs
+
+# Application
+TIMEOUT=30
+BATCH_SIZE=1000
+
+# Add your pipeline-specific variables here
+API_KEY=your_api_key_here
+API_BASE_URL=https://api.example.com
 ```
 
-## Run Locally
+## 🔍 Monitoring & Debugging
 
-```
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -U pip aiohttp clickhouse-driver pandas pytz
+### Logs
+
+Logs are organized in the `logs/` directory:
+- `logs/system/application.log` - System-level logs
+- `logs/jobs/{job_name}.log` - Per-job detailed logs
+- `logs/cron.log` - Cron execution logs
+
+### Data Monitoring
+
+```bash
+# Check data counts in all tables
+./run.sh backfill_counts
 
 # List available jobs
-python scripts/run.py list
+./run.sh backfill_list
 
-# Run a pipeline by name
-python scripts/run.py run <pipeline_name>
+# Backfill specific jobs
+./run.sh backfill 7 job1 job2  # Last 7 days for job1 and job2
 ```
 
-## Migrations (ClickHouse)
+### Migration Status
 
-```
-python migrations/migration_manager.py status
-python migrations/migration_manager.py run
-```
+```bash
+# Check migration status
+./run.sh migrate_status
 
-## Deploy
-
-```
-./deploy.sh <ssh_user> <ssh_host> [--clean]
+# Run pending migrations
+./run.sh migrate
 ```
 
-Deploy script will:
-- rsync project → server
-- create/upgrade venv and install runtime deps
-- ensure `.env` and `CLICKHOUSE_DATABASE`
-- run migrations
-- run each job once (seed)
-- install crons
+## 🚀 Production Deployment
 
-## Cron Schedules (example)
+1. **Prepare Server**: Ensure Python 3.9+, ClickHouse access, and network connectivity
+2. **Configure Environment**: Set up `.env` with production values
+3. **Deploy**: `./deploy.sh user hostname`
+4. **Verify**: Check logs, data counts, and cron jobs
+5. **Monitor**: Set up monitoring for logs and data freshness
 
-- latest: every 5 min
-- hourly: at :00 every hour
-- daily: 00:00
-- weekly: Monday 00:00
-- monthly: 1st 00:00
-- yearly: Jan 1st 00:00
+### Deployment Checklist
 
-## Notes
+- [ ] Server access and permissions configured
+- [ ] ClickHouse database accessible
+- [ ] Environment variables configured
+- [ ] API keys and external service access verified
+- [ ] Network connectivity tested
+- [ ] Monitoring and alerting configured
 
-- Idempotent “latest” facts are best modeled with `ReplacingMergeTree(<updated_at_column>)` and an upsert loader keyed by stable dimensions.
-- Historical/scope tables typically use `MergeTree` with Float64 numerics and `Array(String)` where appropriate.
-- Logs: server at `<project>/logs/cron.log`.
+## 📚 Documentation
+
+- **[📖 Complete Documentation](docs/README.md)** - Comprehensive documentation index
+- **[🚀 Quick Start Guide](docs/quick-start.md)** - Get up and running quickly
+- **[🏗️ Architecture Overview](docs/architecture/README.md)** - System design and components
+- **[📊 System Diagrams](docs/diagrams/README.md)** - Visual architecture representations
+- **[📚 API Reference](docs/api-reference.md)** - Complete API documentation
+- **[🛠️ Developer Guide](docs/developer-guide.md)** - Contributing and extending
+
+## 🤝 Contributing
+
+1. Add your pipeline modules to `src/pipelines/`
+2. Follow the pipeline module pattern (see example above)
+3. Add tests in `tests/unit/` and `tests/integration/`
+4. Run the test suite: `./run.sh test`
+5. Update documentation as needed
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**"No pipelines found"**
+- Add pipeline modules to `src/pipelines/` following the naming pattern `*_pipeline.py`
+
+**"Database connection failed"**
+- Check ClickHouse configuration in `.env`
+- Verify network connectivity and credentials
+
+**"Tests failing"**
+- Install test dependencies: `pip install pytest pytest-asyncio`
+- Check test results in `tests/results/latest_test_results.json`
+
+**"Deployment fails"**
+- Check server access and permissions
+- Verify deployment directory is writable
+- Check logs in deployment output
+
+### Getting Help
+
+1. Check the logs in `logs/` directory
+2. Run tests to verify system health: `./run.sh test`
+3. Check configuration: `./run.sh check`
+4. Review test results in `tests/results/`
+
+---
+
+## 🎉 Ready to Build Something Amazing?
+
+This framework provides everything you need to build **production-grade data processing systems** without the infrastructure overhead. Focus on your data, your logic, your business value - we've got the rest covered.
+
+**Start building your first pipeline in minutes:**
+
+1. **Clone & Configure**: `cp env.example .env`
+2. **Create Pipeline**: Add `src/pipelines/my_pipeline.py`
+3. **Test Locally**: `./run.sh list && ./run.sh cron_run my_pipeline`
+4. **Deploy**: `./deploy.sh user hostname`
+5. **Monitor**: Check logs, data counts, and health metrics
+
+**Welcome to the future of data processing! 🚀**

@@ -1,17 +1,23 @@
 # src/main.py
 """
 Main application entry point for the data processing framework.
+
+This module provides the main application interface with pipeline discovery,
+cron job management, and command-line interface functionality.
 """
 import asyncio
 import sys
 import os
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
+from pathlib import Path
+
 from core.logging import setup_logging, log_with_timestamp
 from core.config import config
-
-# Import pipeline factory
-# from pipelines.pipeline_factory import run_pipeline  # Not needed in new implementation
+from core import (
+    validate_pipeline_config, PipelineConfig, ValidationError,
+    log_pipeline_stage, PerformanceLogger
+)
 
 # Import migration manager
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'migrations'))
@@ -39,29 +45,56 @@ def register_cron_job(
     job_name: str,
     pipeline: Callable[..., bool],
     schedule: str,
-    description: str = ""
+    description: str = "",
+    **kwargs
 ):
     """
-    Register a pipeline as a cron job.
+    Register a pipeline as a cron job with Pydantic validation.
     
     Args:
         job_name: Unique name for the cron job
         pipeline: The pipeline function to run
         schedule: Cron schedule expression (e.g., "0 */6 * * *" for every 6 hours)
         description: Optional description of the job
+        **kwargs: Additional pipeline configuration options
     """
-    _cron_registry[job_name] = {
-        'pipeline': pipeline,
-        'schedule': schedule,
-        'description': description,
-        'last_run': None,
-        'status': 'registered'
-    }
-    log_with_timestamp(f"Registered cron job: {job_name} (schedule: {schedule})", "Main")
+    try:
+        # Create pipeline configuration data
+        pipeline_data = {
+            'name': job_name,
+            'description': description,
+            'schedule': schedule,
+            **kwargs
+        }
+        
+        # Validate pipeline configuration using Pydantic
+        pipeline_config = validate_pipeline_config(pipeline_data)
+        
+        # Register the validated pipeline
+        _cron_registry[job_name] = {
+            'pipeline': pipeline,
+            'config': pipeline_config,
+            'last_run': None,
+            'status': 'registered'
+        }
+        
+        log_with_timestamp(
+            f"Registered cron job: {job_name} (schedule: {schedule}, validated)", 
+            "Main"
+        )
+        
+    except ValidationError as e:
+        log_with_timestamp(
+            f"Failed to register cron job '{job_name}': {e}", 
+            "Main", 
+            "error"
+        )
+        raise
 
+@log_pipeline_stage('JobExecution', 'info')
 def run_cron_job(job_name: str, *args, **kwargs) -> bool:
     """
-    Run a specific cron job.
+    Run a specific cron job with performance monitoring and validation.
     
     Args:
         job_name: Name of the cron job to run
@@ -83,15 +116,24 @@ def run_cron_job(job_name: str, *args, **kwargs) -> bool:
     job['last_run'] = datetime.now()
     job['status'] = 'running'
     
-    log_with_timestamp(f"Running cron job: {job_name}", "Main")
+    # Get pipeline configuration for validation and monitoring
+    pipeline_config = job.get('config')
+    timeout = pipeline_config.timeout if pipeline_config and pipeline_config.timeout else 300
     
-    try:
-        # Run the pipeline (handle both sync and async functions)
-        pipeline_func = job['pipeline']
-        if asyncio.iscoroutinefunction(pipeline_func):
-            success = asyncio.run(pipeline_func(*args, **kwargs))
-        else:
-            success = pipeline_func(*args, **kwargs)
+    log_with_timestamp(f"Running cron job: {job_name} (timeout: {timeout}s)", "Main")
+    
+    # Use performance logger for detailed timing
+    with PerformanceLogger(f"CronJob-{job_name}", "JobExecution"):
+        try:
+            # Run the pipeline (handle both sync and async functions)
+            pipeline_func = job['pipeline']
+            if asyncio.iscoroutinefunction(pipeline_func):
+                success = asyncio.run(pipeline_func(*args, **kwargs))
+            else:
+                success = pipeline_func(*args, **kwargs)
+        except Exception as e:
+            log_with_timestamp(f"Pipeline execution failed: {str(e)}", "Main", "error")
+            success = False
         
         if success:
             job['status'] = 'completed'
@@ -101,10 +143,6 @@ def run_cron_job(job_name: str, *args, **kwargs) -> bool:
             log_with_timestamp(f"Cron job failed: {job_name}", "Main", "error")
         
         return success
-    except Exception as e:
-        job['status'] = 'error'
-        log_with_timestamp(f"Error running cron job '{job_name}': {e}", "Main", "error")
-        return False
 
 def list_cron_jobs() -> Dict[str, Any]:
     """List all registered cron jobs."""
@@ -122,43 +160,73 @@ def unregister_cron_job(job_name: str) -> bool:
         return True
     return False
 
+def _discover_pipeline_modules() -> list:
+    """Discover pipeline modules in the pipelines directory."""
+    pipelines_dir = Path(__file__).parent / 'pipelines'
+    pipeline_modules = []
+    
+    for file_path in pipelines_dir.glob('*_pipeline.py'):
+        if file_path.name != '__init__.py':
+            pipeline_modules.append(file_path.stem)
+    
+    return pipeline_modules
+
+
+def _load_pipeline_module(module_name: str) -> Optional[Any]:
+    """Load a pipeline module and return it."""
+    try:
+        import importlib
+        return importlib.import_module(f'pipelines.{module_name}')
+    except Exception as e:
+        log_with_timestamp(f"Error loading pipeline module {module_name}: {e}", "Main", "warning")
+        return None
+
+
+def _register_pipeline_from_module(module: Any, module_name: str) -> int:
+    """Register pipelines from a loaded module."""
+    registered_count = 0
+    
+    # Look for register function and pipeline registry
+    if hasattr(module, 'register_pipelines'):
+        module.register_pipelines()
+        log_with_timestamp(f"Registered pipelines from {module_name}", "Main")
+    
+    if hasattr(module, 'get_pipeline_registry'):
+        registry = module.get_pipeline_registry()
+        
+        # Register each pipeline as a cron job
+        for pipeline_name, pipeline_data in registry.items():
+            schedule = pipeline_data.get('schedule', '0 * * * *')  # Default hourly
+            description = pipeline_data.get('description', f'{pipeline_name} pipeline')
+            
+            register_cron_job(
+                job_name=pipeline_name,
+                pipeline=pipeline_data['pipeline'],
+                schedule=schedule,
+                description=description
+            )
+            registered_count += 1
+    
+    return registered_count
+
+
 def register_all_pipelines():
     """Register all available pipelines."""
     log_with_timestamp("Registering all pipelines...", "Main")
     
-    # Register CMC pipelines
-    from pipelines.cmc_pipeline import register_cmc_pipelines
-    register_cmc_pipelines()
+    pipeline_modules = _discover_pipeline_modules()
+    total_registered = 0
     
-    # Register CMC pipelines as cron jobs using the existing system
-    from pipelines.cmc_pipeline import get_pipeline_registry
+    for module_name in pipeline_modules:
+        module = _load_pipeline_module(module_name)
+        if module:
+            registered_count = _register_pipeline_from_module(module, module_name)
+            total_registered += registered_count
     
-    # Get CMC pipeline registry
-    cmc_pipelines = get_pipeline_registry()
-    
-    # Time scope configurations - aligned with actual time scope starts
-    time_scope_schedules = {
-        'cmc_latest_quotes': '0 */6 * * *',  # Every 6 hours (00:00, 06:00, 12:00, 18:00)
-        'cmc_hourly': '0 * * * *',           # Every hour at minute 0 (start of hour)
-        'cmc_daily': '0 0 * * *',            # Daily at 00:00 (start of day)
-        'cmc_weekly': '0 0 * * 1',           # Weekly on Monday at 00:00 (start of week)
-        'cmc_monthly': '0 0 1 * *',          # Monthly on 1st at 00:00 (start of month)
-        'cmc_yearly': '0 0 1 1 *'            # Yearly on Jan 1st at 00:00 (start of year)
-    }
-    
-    # Register each CMC pipeline as cron job
-    for pipeline_name, pipeline_data in cmc_pipelines.items():
-        schedule = time_scope_schedules.get(pipeline_name, '0 * * * *')
-        description = pipeline_data.get('description', f'CMC {pipeline_name} pipeline')
-        
-        register_cron_job(
-            job_name=pipeline_name,
-            pipeline=pipeline_data['pipeline'],
-            schedule=schedule,
-            description=description
-        )
-    
-    log_with_timestamp(f"Registered {len(list_cron_jobs())} cron jobs", "Main")
+    if total_registered == 0:
+        log_with_timestamp("No pipelines found. Add pipeline modules to src/pipelines/ directory", "Main", "warning")
+    else:
+        log_with_timestamp(f"Registered {total_registered} cron jobs from {len(pipeline_modules)} pipeline modules", "Main")
 
 def run_pipeline_by_name(pipeline_name: str) -> bool:
     """Run a pipeline by name."""
@@ -173,6 +241,67 @@ def run_pipeline_by_name(pipeline_name: str) -> bool:
         log_with_timestamp(f"Error running pipeline {pipeline_name}: {e}", "Main", "error")
         return False
 
+def _handle_migrate_command():
+    """Handle the migrate command."""
+    log_with_timestamp("Running database migrations...", "Main")
+    if ensure_database_schema():
+        log_with_timestamp("Migrations completed successfully", "Main")
+    else:
+        log_with_timestamp("Migrations failed", "Main", "error")
+        sys.exit(1)
+
+
+def _handle_migrate_status_command():
+    """Handle the migrate_status command."""
+    log_with_timestamp("Checking migration status...", "Main")
+    try:
+        migration_manager = ClickHouseMigrationManager()
+        migration_manager.show_status()
+    except Exception as e:
+        log_with_timestamp(f"Error checking migration status: {e}", "Main", "error")
+        sys.exit(1)
+
+
+def _handle_list_command():
+    """Handle the list command."""
+    register_all_pipelines()
+    cron_jobs = list(_cron_registry.keys())
+    
+    if cron_jobs:
+        log_with_timestamp(f"Available pipelines: {', '.join(cron_jobs)}", "Main")
+    else:
+        log_with_timestamp("No pipelines available. Register pipelines using register_cron_job()", "Main", "warning")
+
+
+def _handle_pipeline_command(pipeline_name: str):
+    """Handle running a specific pipeline."""
+    register_all_pipelines()
+    success = run_pipeline_by_name(pipeline_name)
+    if success:
+        log_with_timestamp(f"Pipeline {pipeline_name} completed successfully", "Main")
+    else:
+        log_with_timestamp(f"Pipeline {pipeline_name} failed", "Main", "error")
+        sys.exit(1)
+
+
+def _show_help():
+    """Show help information."""
+    log_with_timestamp("No command specified. Available commands:", "Main")
+    log_with_timestamp("  migrate        - Run database migrations", "Main")
+    log_with_timestamp("  migrate_status - Show migration status", "Main")
+    log_with_timestamp("  list           - List available pipelines", "Main")
+    log_with_timestamp("  <pipeline_name> - Run specific pipeline", "Main")
+    
+    # Register all pipelines and show them
+    register_all_pipelines()
+    cron_jobs = list(_cron_registry.keys())
+    
+    if cron_jobs:
+        log_with_timestamp(f"Available pipelines: {', '.join(cron_jobs)}", "Main")
+    else:
+        log_with_timestamp("No pipelines available. Register pipelines using register_cron_job()", "Main", "warning")
+
+
 def main():
     """Main application entry point."""
     # Setup logging
@@ -180,66 +309,20 @@ def main():
     
     log_with_timestamp("Starting Data Processing Framework", "Main")
     
-    # Handle migration commands
+    # Handle commands
     if len(sys.argv) > 1:
         command = sys.argv[1]
         
         if command == "migrate":
-            log_with_timestamp("Running database migrations...", "Main")
-            if ensure_database_schema():
-                log_with_timestamp("Migrations completed successfully", "Main")
-            else:
-                log_with_timestamp("Migrations failed", "Main", "error")
-                sys.exit(1)
-            return
-        
+            _handle_migrate_command()
         elif command == "migrate_status":
-            log_with_timestamp("Checking migration status...", "Main")
-            try:
-                migration_manager = ClickHouseMigrationManager()
-                migration_manager.show_status()
-            except Exception as e:
-                log_with_timestamp(f"Error checking migration status: {e}", "Main", "error")
-                sys.exit(1)
-            return
-        
+            _handle_migrate_status_command()
         elif command == "list":
-            # Register all pipelines first
-            register_all_pipelines()
-            
-            # List available pipelines
-            cron_jobs = list(_cron_registry.keys())
-            
-            if cron_jobs:
-                log_with_timestamp(f"Available pipelines: {', '.join(cron_jobs)}", "Main")
-            else:
-                log_with_timestamp("No pipelines available. Register pipelines using register_cron_job()", "Main", "warning")
-            return
-        
+            _handle_list_command()
         else:
-            # Run specific pipeline
-            register_all_pipelines()
-            success = run_pipeline_by_name(command)
-            if success:
-                log_with_timestamp(f"Pipeline {command} completed successfully", "Main")
-            else:
-                log_with_timestamp(f"Pipeline {command} failed", "Main", "error")
-                sys.exit(1)
+            _handle_pipeline_command(command)
     else:
-        log_with_timestamp("No command specified. Available commands:", "Main")
-        log_with_timestamp("  migrate        - Run database migrations", "Main")
-        log_with_timestamp("  migrate_status - Show migration status", "Main")
-        log_with_timestamp("  list           - List available pipelines", "Main")
-        log_with_timestamp("  <pipeline_name> - Run specific pipeline", "Main")
-        
-        # Register all pipelines and show them
-        register_all_pipelines()
-        cron_jobs = list(_cron_registry.keys())
-        
-        if cron_jobs:
-            log_with_timestamp(f"Available pipelines: {', '.join(cron_jobs)}", "Main")
-        else:
-            log_with_timestamp("No pipelines available. Register pipelines using register_cron_job()", "Main", "warning")
+        _show_help()
     
     log_with_timestamp("Application completed", "Main")
 

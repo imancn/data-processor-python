@@ -30,24 +30,57 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDE
+# Vendored dependencies (offline wheels)
+vendor/
+
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Logs
-logs/
-*.log
-.deploy.env
-
-# ClickHouse data
-clickhouse_data/
-
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# Docker
-.dockerignore
+# Project specific
+logs/
+*.log
+cron.log
+
+# Test results - trackable but not committed
+tests/results/
+!tests/results/.gitkeep
+!tests/results/README.md
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/

@@ -21,7 +21,7 @@ def register_pipeline(
     Register a pipeline with cron scheduling and table naming.
     
     Args:
-        pipeline_name: Name of the pipeline (e.g., 'cmc_hourly')
+        pipeline_name: Name of the pipeline (e.g., 'data_hourly')
         pipeline_func: Pipeline function to execute
         schedule: Cron schedule expression
         description: Human-readable description
@@ -100,7 +100,7 @@ def register_pipeline_with_timescope(
     Register multiple pipelines for different time scopes.
     
     Args:
-        base_name: Base pipeline name (e.g., 'cmc')
+        base_name: Base pipeline name (e.g., 'data')
         pipeline_func: Pipeline function factory
         time_scopes: List of time scopes (e.g., ['hourly', 'daily', 'weekly'])
         schedule_template: Cron schedule template

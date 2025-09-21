@@ -1,0 +1,75 @@
+@startuml System Architecture
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle rectangle
+
+package "Data Processing Framework" {
+    
+    package "User Pipeline Modules" as UserPipelines {
+        component [*_pipeline.py] as PipelineModules
+        note right of PipelineModules : Auto-discovered\npipeline modules
+    }
+    
+    package "Core Framework" as CoreFramework {
+        component [Configuration\nSystem] as Config
+        component [Logging\nSystem] as Logging
+        component [Pipeline\nDiscovery] as Discovery
+        component [Cron\nManager] as CronManager
+    }
+    
+    package "Pipeline Tools" as PipelineTools {
+        package "Extractors" as Extractors {
+            component [HTTP\nExtractor] as HttpExt
+            component [Database\nExtractor] as DbExt
+            component [File\nExtractor] as FileExt
+        }
+        
+        package "Transformers" as Transformers {
+            component [Lambda\nTransformer] as LambdaTrans
+            component [Type\nConverter] as TypeTrans
+            component [Column\nTransformer] as ColTrans
+        }
+        
+        package "Loaders" as Loaders {
+            component [ClickHouse\nLoader] as ChLoader
+            component [Console\nLoader] as ConsoleLoader
+            component [File\nLoader] as FileLoader
+        }
+    }
+    
+    package "Operations & Deployment" as Operations {
+        component [Migration\nSystem] as Migrations
+        component [Deployment\nScripts] as Deploy
+        component [Testing\nFramework] as Testing
+        component [Backfill\nManager] as Backfill
+    }
+}
+
+' External Systems
+cloud "External APIs" as ExternalAPIs {
+    component [REST APIs] as RestAPIs
+    component [Data Sources] as DataSources
+}
+
+database "ClickHouse Database" as ClickHouse {
+    component [Tables] as Tables
+    component [Schema] as Schema
+}
+
+node "Server Environment" as Server {
+    component [Cron Jobs] as CronJobs
+    component [Processes] as Processes
+    component [Logs] as Logs
+}
+
+' Connections
+UserPipelines --> CoreFramework : registers with
+CoreFramework --> PipelineTools : uses
+PipelineTools --> Operations : managed by
+Operations --> Server : deploys to
+
+PipelineTools --> ExternalAPIs : extracts from
+PipelineTools --> ClickHouse : loads to
+CoreFramework --> Server : schedules on
+
+@enduml

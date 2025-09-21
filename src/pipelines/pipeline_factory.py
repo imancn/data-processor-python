@@ -1,9 +1,17 @@
 # src/pipelines/pipeline_factory.py
-from typing import Callable, Optional
+"""
+Pipeline factory for creating various types of data processing pipelines.
+
+This module provides factory functions for creating ETL, EL, parallel, sequential,
+conditional, and retry pipelines with standardized error handling and logging.
+"""
+from typing import Callable, Optional, Dict, Any, List
 import asyncio
 import pandas as pd
 from datetime import datetime
+
 from core.logging import log_with_timestamp
+from core.models import PipelineConfig
 
 def create_el_pipeline(
     extractor: Callable[..., pd.DataFrame],
@@ -74,11 +82,18 @@ def create_etl_pipeline(
 
     return etl_pipeline_func
 def create_parallel_pipeline(
-    pipelines: list,
+    pipelines: List[Callable[..., bool]],
     name: str = "Parallel Pipeline"
 ) -> Callable[..., bool]:
     """
-    Creates a pipeline that runs multiple pipelines in parallel with pandas DataFrame support.
+    Creates a pipeline that runs multiple pipelines in parallel.
+    
+    Args:
+        pipelines: List of pipeline functions to run in parallel
+        name: Name of the parallel pipeline
+        
+    Returns:
+        Pipeline function that runs all pipelines in parallel
     """
     async def parallel_pipeline_func(*args, **kwargs) -> bool:
         log_with_timestamp(f"Starting {name} with {len(pipelines)} parallel pipelines", name)
@@ -105,11 +120,18 @@ def create_parallel_pipeline(
     return parallel_pipeline_func
 
 def create_sequential_pipeline(
-    pipelines: list,
+    pipelines: List[Callable[..., bool]],
     name: str = "Sequential Pipeline"
 ) -> Callable[..., bool]:
     """
-    Creates a pipeline that runs multiple pipelines sequentially with pandas DataFrame support.
+    Creates a pipeline that runs multiple pipelines sequentially.
+    
+    Args:
+        pipelines: List of pipeline functions to run sequentially
+        name: Name of the sequential pipeline
+        
+    Returns:
+        Pipeline function that runs all pipelines sequentially
     """
     async def sequential_pipeline_func(*args, **kwargs) -> bool:
         log_with_timestamp(f"Starting {name} with {len(pipelines)} sequential pipelines", name)
@@ -206,3 +228,71 @@ def create_retry_pipeline(
         return False
 
     return retry_pipeline_func
+
+
+class PipelineFactory:
+    """
+    Factory for creating pipelines from configuration.
+    
+    This class provides a centralized way to create pipelines based on
+    configuration objects, with support for different pipeline types.
+    """
+    
+    def __init__(self):
+        """Initialize the pipeline factory."""
+        self.extractors = {}
+        self.transformers = {}
+        self.loaders = {}
+    
+    def create_pipeline(self, config: PipelineConfig) -> Callable[..., bool]:
+        """
+        Create a pipeline from configuration.
+        
+        Args:
+            config: Pipeline configuration object
+            
+        Returns:
+            Pipeline function based on configuration
+            
+        Note:
+            This is a simplified implementation. In a real system, this would
+            use the configuration to create appropriate extractors, transformers,
+            and loaders based on the pipeline requirements.
+        """
+        # For now, create a simple ETL pipeline
+        # In a real implementation, this would use the config to create appropriate components
+        
+        async def mock_extractor(*args, **kwargs) -> pd.DataFrame:
+            """Mock extractor that returns sample data."""
+            return pd.DataFrame({'id': [1, 2, 3], 'name': ['A', 'B', 'C']})
+        
+        def mock_transformer(data: pd.DataFrame) -> pd.DataFrame:
+            """Mock transformer that passes data through."""
+            return data
+        
+        def mock_loader(data: pd.DataFrame) -> bool:
+            """Mock loader that always succeeds."""
+            return True
+        
+        return create_etl_pipeline(
+            mock_extractor,
+            mock_transformer, 
+            mock_loader,
+            config.name
+        )
+    
+    def get_pipeline_types(self) -> List[str]:
+        """Get available pipeline types."""
+        return ['etl', 'el', 'parallel', 'sequential', 'conditional', 'retry']
+    
+    def register_extractor(self, name: str, extractor: Callable[..., pd.DataFrame]) -> None:
+        """Register a custom extractor."""
+        self.extractors[name] = extractor
+    
+    def register_transformer(self, name: str, transformer: Callable[[pd.DataFrame], pd.DataFrame]) -> None:
+        """Register a custom transformer."""
+        self.transformers[name] = transformer
+    
+    def register_loader(self, name: str, loader: Callable[[pd.DataFrame], bool]) -> None:
+        """Register a custom loader."""
+        self.loaders[name] = loader

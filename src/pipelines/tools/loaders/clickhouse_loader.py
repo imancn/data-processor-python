@@ -21,13 +21,13 @@ def load_to_clickhouse(
     Generic ClickHouse loader that works with pandas DataFrames.
     """
     try:
-        from clickhouse_driver import Client
+        import clickhouse_connect
 
         clickhouse_config = config.get_clickhouse_config()
-        client = Client(
+        client = clickhouse_connect.get_client(
             host=host or clickhouse_config['host'],
             port=port or clickhouse_config['port'],
-            user=user or clickhouse_config['user'],
+            username=user or clickhouse_config['user'],
             password=password or clickhouse_config['password'],
             database=database or clickhouse_config['database']
         )
@@ -42,7 +42,7 @@ def load_to_clickhouse(
         # Handle NaN values and array data by converting to None
         string_columns = ['name', 'symbol', 'slug', 'tags', 'platform', 'quote_currency']
         numeric_columns = {
-            'id','cmc_rank','num_market_pairs','circulating_supply','total_supply','max_supply','price',
+            'id','rank','num_market_pairs','circulating_supply','total_supply','max_supply','price',
             'volume_24h','volume_change_24h','percent_change_1h','percent_change_24h','percent_change_7d',
             'percent_change_30d','percent_change_60d','percent_change_90d','market_cap','market_cap_dominance',
             'fully_diluted_market_cap','self_reported_circulating_supply','self_reported_market_cap','tvl_ratio'
@@ -126,8 +126,7 @@ def load_to_clickhouse(
                     tuple_record = tuple(record.get(col, None) for col in data.columns)
                     batch_tuples.append(tuple_record)
                 
-                columns_csv = ', '.join(list(data.columns))
-                client.execute(f'INSERT INTO {table_name} ({columns_csv}) VALUES', batch_tuples)
+                client.insert(table_name, batch_tuples, column_names=list(data.columns))
                 log_with_timestamp(f"Loaded batch {i//batch_size + 1} ({len(batch)} records) to {table_name}", "ClickHouse Loader")
             except Exception as e:
                 log_with_timestamp(f"Failed to load batch {i//batch_size + 1} to {table_name}: {e}", "ClickHouse Loader", "error")
@@ -157,13 +156,13 @@ def upsert_to_clickhouse(
     and INSERT for new records.
     """
     try:
-        from clickhouse_driver import Client
+        import clickhouse_connect
 
         clickhouse_config = config.get_clickhouse_config()
-        client = Client(
+        client = clickhouse_connect.get_client(
             host=host or clickhouse_config['host'],
             port=port or clickhouse_config['port'],
-            user=user or clickhouse_config['user'],
+            username=user or clickhouse_config['user'],
             password=password or clickhouse_config['password'],
             database=database or clickhouse_config['database']
         )
@@ -249,9 +248,10 @@ def upsert_to_clickhouse(
                     
                     check_query = f"SELECT COUNT(*) FROM {table_name} WHERE {' AND '.join(formatted_where_conditions)}"
                     log_with_timestamp(f"Checking existence with query: {check_query}", "ClickHouse Loader", "debug")
-                    result = client.execute(check_query)
-                    exists = result[0][0] > 0 if result else False
-                    log_with_timestamp(f"Record exists: {exists} (count: {result[0][0] if result else 0})", "ClickHouse Loader", "debug")
+                    qr = client.query(check_query)
+                    rows = qr.result_rows if hasattr(qr, 'result_rows') else []
+                    exists = rows[0][0] > 0 if rows else False
+                    log_with_timestamp(f"Record exists: {exists} (count: {rows[0][0] if rows else 0})", "ClickHouse Loader", "debug")
                     
                     if exists:
                         # Update existing record
@@ -282,7 +282,7 @@ def upsert_to_clickhouse(
                                 UPDATE {', '.join(update_columns)}
                                 WHERE {' AND '.join(formatted_where_conditions)}
                             """
-                            client.execute(update_query)
+                            client.command(update_query)
                             log_with_timestamp(f"Updated existing record for {unique_key_columns} = {[record.get(k) for k in unique_key_columns]}", "ClickHouse Loader", "debug")
                     else:
                         # Insert new record
@@ -318,7 +318,7 @@ def upsert_to_clickhouse(
                             insert_values.append(f"'{now_str}'")
                         
                         insert_query = f"INSERT INTO {table_name} ({', '.join(insert_columns)}) VALUES ({', '.join(insert_values)})"
-                        client.execute(insert_query)
+                        client.command(insert_query)
                         log_with_timestamp(f"Inserted new record for {unique_key_columns} = {[record.get(k) for k in unique_key_columns]}", "ClickHouse Loader", "debug")
                 
                 log_with_timestamp(f"Processed batch {i//batch_size + 1} ({len(batch)} records) for {table_name}", "ClickHouse Loader")

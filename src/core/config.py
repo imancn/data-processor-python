@@ -1,99 +1,188 @@
 # src/core/config.py
-import os
-from typing import Dict, Any
+"""
+Configuration management for the data processing framework.
 
-def load_env_file(env_file_path: str = '.env'):
-    """Load environment variables from .env file."""
-    if os.path.exists(env_file_path):
-        with open(env_file_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    os.environ[key] = value
+This module provides centralized configuration management using Pydantic
+BaseSettings for automatic validation, type safety, and environment
+variable loading.
+"""
+
+import os
+from typing import Dict, Any, Optional, Union, TypeVar
+from pathlib import Path
+
+from .models import FrameworkSettings
+from .exceptions import ConfigurationError
+
+# Type variable for generic configuration access
+T = TypeVar('T')
 
 class Config:
     """
-    Centralized configuration management for the application.
-    Loads settings from environment variables.
+    Configuration manager using Pydantic BaseSettings.
+    
+    This class wraps the Pydantic FrameworkSettings model to provide
+    backward compatibility while leveraging Pydantic's validation
+    and environment variable loading capabilities.
     """
-    def __init__(self):
-        self._settings = {}
-        load_env_file()  # Load .env file first
-        self._load_env_config()
+    
+    def __init__(self) -> None:
+        """Initialize configuration with Pydantic validation."""
+        try:
+            self._settings = FrameworkSettings()
+        except Exception as e:
+            raise ConfigurationError(
+                f"Failed to load configuration: {e}",
+                {'error': str(e)}
+            )
 
-    def _load_env_config(self):
-        """Load configuration from environment variables."""
-        self._settings['LOG_LEVEL'] = os.getenv('LOG_LEVEL', 'INFO')
-        self._settings['LOG_FILE'] = os.getenv('LOG_FILE', 'logs/application.log')
-        self._settings['TIMEOUT'] = int(os.getenv('TIMEOUT', '30'))
-        self._settings['BATCH_SIZE'] = int(os.getenv('BATCH_SIZE', '1000'))
+    @property
+    def settings(self) -> FrameworkSettings:
+        """Get the underlying Pydantic settings model."""
+        return self._settings
+    
+    def reload(self) -> None:
+        """Reload configuration from environment variables."""
+        try:
+            self._settings = FrameworkSettings()
+        except Exception as e:
+            raise ConfigurationError(
+                f"Failed to reload configuration: {e}",
+                {'error': str(e)}
+            )
 
-        # ClickHouse configuration
-        self._settings['CLICKHOUSE_HOST'] = os.getenv('CLICKHOUSE_HOST', 'localhost')
-        self._settings['CLICKHOUSE_PORT'] = int(os.getenv('CLICKHOUSE_PORT', '9000'))
-        self._settings['CLICKHOUSE_USER'] = os.getenv('CLICKHOUSE_USER', 'default')
-        self._settings['CLICKHOUSE_PASSWORD'] = os.getenv('CLICKHOUSE_PASSWORD', '')
-        self._settings['CLICKHOUSE_DATABASE'] = os.getenv('CLICKHOUSE_DATABASE', 'invex_data')
-
-        # CoinMarketCap API configuration (Sandbox API for testing)
-        self._settings['CMC_API_KEY'] = os.getenv('CMC_API_KEY')
-        self._settings['CMC_API_BASE_URL'] = os.getenv('CMC_API_BASE_URL', 'https://sandbox-api.coinmarketcap.com/v1')
-        self._settings['CMC_SYMBOLS'] = os.getenv('CMC_SYMBOLS', 'BTC,ETH,SOL,DOGE,SHIB,PEPE,BABYDOGE,BBL,ADA,MATIC,AVAX,DOT,LINK,UNI,LTC')
-
-        # Example external API (e.g., for stock data)
-        self._settings['STOCK_API_BASE_URL'] = os.getenv('STOCK_API_BASE_URL', 'https://api.stockdata.com/v1')
-        self._settings['STOCK_API_KEY'] = os.getenv('STOCK_API_KEY')
-
-        # Example external API (e.g., for weather data)
-        self._settings['WEATHER_API_BASE_URL'] = os.getenv('WEATHER_API_BASE_URL', 'https://api.openweathermap.org/data/2.5')
-        self._settings['WEATHER_API_KEY'] = os.getenv('WEATHER_API_KEY')
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get a configuration value."""
-        return self._settings.get(key, default)
+    def get(self, key: str, default: Optional[T] = None) -> Union[T, Any]:
+        """
+        Get a configuration value from the Pydantic model.
+        
+        Args:
+            key: Configuration key (case-insensitive)
+            default: Default value if key not found
+            
+        Returns:
+            Configuration value or default
+        """
+        # Convert key to lowercase to match Pydantic field names
+        key_lower = key.lower()
+        
+        # Try to get the value from the Pydantic model
+        if hasattr(self._settings, key_lower):
+            return getattr(self._settings, key_lower)
+        
+        # Fallback to default
+        return default
+    
+    def get_str(self, key: str, default: str = '') -> str:
+        """Get a string configuration value."""
+        value = self.get(key, default)
+        return str(value) if value is not None else default
+    
+    def get_int(self, key: str, default: int = 0) -> int:
+        """Get an integer configuration value."""
+        value = self.get(key, default)
+        if isinstance(value, int):
+            return value
+        try:
+            return int(value) if value is not None else default
+        except (ValueError, TypeError):
+            return default
+    
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        """Get a boolean configuration value."""
+        value = self.get(key, default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'on')
+        return bool(value) if value is not None else default
 
     @property
     def log_level(self) -> str:
-        return self.get('LOG_LEVEL')
+        """Get the logging level."""
+        return self._settings.log_level
 
     @property
-    def log_file(self) -> str:
-        return self.get('LOG_FILE')
+    def log_dir(self) -> str:
+        """Get the log directory."""
+        return self._settings.log_dir
+    
+    @property
+    def log_file(self) -> Optional[str]:
+        """Get the log file path."""
+        return self._settings.log_file
 
     @property
     def timeout(self) -> int:
-        return self.get('TIMEOUT')
+        """Get the request timeout."""
+        return self._settings.timeout
 
     @property
     def batch_size(self) -> int:
-        return self.get('BATCH_SIZE')
+        """Get the batch size."""
+        return self._settings.batch_size
 
     def get_clickhouse_config(self) -> Dict[str, Any]:
+        """
+        Get ClickHouse configuration as a dictionary.
+        
+        Returns:
+            Dictionary with ClickHouse connection parameters
+        """
         return {
-            'host': self.get('CLICKHOUSE_HOST'),
-            'port': self.get('CLICKHOUSE_PORT'),
-            'user': self.get('CLICKHOUSE_USER'),
-            'password': self.get('CLICKHOUSE_PASSWORD'),
-            'database': self.get('CLICKHOUSE_DATABASE')
+            'host': self._settings.clickhouse_host,
+            'port': self._settings.clickhouse_port,
+            'user': self._settings.clickhouse_user,
+            'password': self._settings.clickhouse_password,
+            'database': self._settings.clickhouse_database,
+            'timeout': self._settings.clickhouse_timeout
         }
 
-    def get_cmc_api_config(self) -> Dict[str, Any]:
+    def get_api_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Get generic API configuration.
+        
+        Returns:
+            Dictionary with API configuration or None if not configured
+        """
+        if not self._settings.api_base_url:
+            return None
+            
         return {
-            'api_key': self.get('CMC_API_KEY'),
-            'base_url': self.get('CMC_API_BASE_URL')
+            'base_url': self._settings.api_base_url,
+            'api_key': self._settings.api_key,
+            'timeout': self._settings.timeout
         }
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert configuration to dictionary.
+        
+        Returns:
+            Dictionary representation of configuration
+        """
+        return self._settings.model_dump()
+    
+    def update(self, **kwargs) -> None:
+        """
+        Update configuration values.
+        
+        Args:
+            **kwargs: Configuration values to update
+            
+        Raises:
+            ConfigurationError: If validation fails
+        """
+        try:
+            # Create new settings with updated values
+            current_dict = self._settings.model_dump()
+            current_dict.update(kwargs)
+            self._settings = FrameworkSettings(**current_dict)
+        except Exception as e:
+            raise ConfigurationError(
+                f"Failed to update configuration: {e}",
+                {'error': str(e), 'kwargs': kwargs}
+            )
 
-    def get_stock_api_config(self) -> Dict[str, Any]:
-        return {
-            'api_key': self.get('STOCK_API_KEY'),
-            'base_url': self.get('STOCK_API_BASE_URL')
-        }
 
-    def get_weather_api_config(self) -> Dict[str, Any]:
-        return {
-            'api_key': self.get('WEATHER_API_KEY'),
-            'base_url': self.get('WEATHER_API_BASE_URL')
-        }
-
+# Global configuration instance
 config = Config()

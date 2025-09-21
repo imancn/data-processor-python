@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from core.config import config
 from core.logging import log_with_timestamp
-from clickhouse_driver import Client
+import clickhouse_connect
 
 
 class ClickHouseMigrationManager:
@@ -29,10 +29,10 @@ class ClickHouseMigrationManager:
     def connect(self):
         """Connect to ClickHouse database."""
         try:
-            self.client = Client(
+            self.client = clickhouse_connect.get_client(
                 host=self.config['host'],
                 port=self.config['port'],
-                user=self.config['user'],
+                username=self.config['user'],
                 password=self.config['password'],
                 database=self.config['database']
             )
@@ -55,7 +55,7 @@ class ClickHouseMigrationManager:
         """
         
         try:
-            self.client.execute(create_table_sql)
+            self.client.command(create_table_sql)
             log_with_timestamp("Migrations table created/verified", "Migration Manager")
             return True
         except Exception as e:
@@ -65,8 +65,8 @@ class ClickHouseMigrationManager:
     def get_executed_migrations(self) -> List[str]:
         """Get list of executed migrations."""
         try:
-            result = self.client.execute("SELECT name FROM migrations ORDER BY id")
-            return [row[0] for row in result]
+            qr = self.client.query("SELECT name FROM migrations ORDER BY id")
+            return [row[0] for row in qr.result_rows]
         except Exception as e:
             log_with_timestamp(f"Failed to get executed migrations: {e}", "Migration Manager", "error")
             return []
@@ -97,15 +97,14 @@ class ClickHouseMigrationManager:
             
             for statement in statements:
                 if statement:
-                    self.client.execute(statement)
+                    self.client.command(statement)
             
             # Record migration as executed
             migration_name = migration_file.stem
             checksum = str(hash(sql_content))
             
-            self.client.execute(
-                "INSERT INTO migrations (id, name, checksum) VALUES",
-                [(len(self.get_executed_migrations()) + 1, migration_name, checksum)]
+            self.client.command(
+                f"INSERT INTO migrations (id, name, checksum) VALUES ({len(self.get_executed_migrations()) + 1}, '{migration_name}', '{checksum}')"
             )
             
             log_with_timestamp(f"Executed migration: {migration_name}", "Migration Manager")

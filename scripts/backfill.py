@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from core.logging import setup_logging, log_with_timestamp
 from core.config import config
@@ -96,33 +96,33 @@ def backfill_all_jobs(days: int) -> bool:
 def show_data_counts():
     """Show data counts in the database."""
     try:
-        from clickhouse_driver import Client
+        import clickhouse_connect
         
         clickhouse_config = config.get_clickhouse_config()
-        client = Client(
+        client = clickhouse_connect.get_client(
             host=clickhouse_config['host'],
             port=clickhouse_config['port'],
-            user=clickhouse_config['user'],
+            username=clickhouse_config['user'],
             password=clickhouse_config['password'],
             database=clickhouse_config['database']
         )
         
         log_with_timestamp("Database data counts:", "Backfill")
         
-        # Check each table
-        tables = [
-            'cmc_latest_quotes',
-            'cmc_hourly', 
-            'cmc_daily',
-            'cmc_weekly',
-            'cmc_monthly',
-            'cmc_yearly'
-        ]
+        # Dynamically discover tables from database
+        tables = []
+        try:
+            # Get all tables in the database
+            qr = client.query("SHOW TABLES")
+            tables = [row[0] for row in qr.result_rows if row[0] != 'migrations']
+        except Exception as e:
+            log_with_timestamp(f"Could not discover tables: {e}", "Backfill", "warning")
+            tables = []
         
         for table in tables:
             try:
-                result = client.execute(f"SELECT COUNT(*) FROM {table}")
-                count = result[0][0] if result else 0
+                qr = client.query(f"SELECT COUNT(*) FROM {table}")
+                count = qr.result_rows[0][0] if qr.result_rows else 0
                 log_with_timestamp(f"  {table}: {count} records", "Backfill")
             except Exception as e:
                 log_with_timestamp(f"  {table}: Error - {e}", "Backfill", "warning")
