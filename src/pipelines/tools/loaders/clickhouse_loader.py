@@ -40,13 +40,9 @@ def load_to_clickhouse(
         data_list = data.to_dict('records')
         
         # Handle NaN values and array data by converting to None
-        string_columns = ['name', 'symbol', 'slug', 'tags', 'platform', 'quote_currency']
-        numeric_columns = {
-            'id','rank','num_market_pairs','circulating_supply','total_supply','max_supply','price',
-            'volume_24h','volume_change_24h','percent_change_1h','percent_change_24h','percent_change_7d',
-            'percent_change_30d','percent_change_60d','percent_change_90d','market_cap','market_cap_dominance',
-            'fully_diluted_market_cap','self_reported_circulating_supply','self_reported_market_cap','tvl_ratio'
-        }
+        # Generic column handling - no hardcoded column names
+        string_columns = set()
+        numeric_columns = set()
         for record in data_list:
             for key, value in record.items():
                 # Convert Decimal to float for ClickHouse Float/Decimal columns
