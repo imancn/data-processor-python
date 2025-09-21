@@ -48,6 +48,11 @@ class FrameworkSettings(BaseSettings):
     api_key: Optional[str] = Field(default=None, description="Generic API key")
     api_base_url: Optional[str] = Field(default=None, description="Generic API base URL")
     
+    # Metabase configuration
+    metabase_base_url: Optional[str] = Field(default=None, description="Metabase base URL")
+    metabase_api_key: Optional[str] = Field(default=None, description="Metabase API key")
+    metabase_timeout: int = Field(default=30, ge=1, description="Metabase request timeout")
+    
     @field_validator('log_level')
     @classmethod
     def validate_log_level(cls, v):
@@ -70,6 +75,14 @@ class FrameworkSettings(BaseSettings):
         """Validate API base URL format."""
         if v and not v.startswith(('http://', 'https://')):
             raise ValueError("API base URL must start with http:// or https://")
+        return v
+    
+    @field_validator('metabase_base_url')
+    @classmethod
+    def validate_metabase_base_url(cls, v):
+        """Validate Metabase base URL format."""
+        if v and not v.startswith(('http://', 'https://')):
+            raise ValueError("Metabase base URL must start with http:// or https://")
         return v
     
     model_config = ConfigDict(

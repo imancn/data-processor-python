@@ -47,11 +47,8 @@ class TestPerformance:
     
     def test_memory_usage(self):
         """Test memory usage during pipeline execution."""
-        try:
-            import psutil
-            import os
-        except ImportError:
-            pytest.skip("psutil not available, skipping memory test")
+        import psutil
+        import os
         
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss

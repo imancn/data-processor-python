@@ -23,14 +23,21 @@ vim .env
 Key configuration variables:
 ```bash
 # ClickHouse Database
-CLICKHOUSE_HOST=your_clickhouse_host
+CLICKHOUSE_HOST=localhost
 CLICKHOUSE_PORT=8123
-CLICKHOUSE_USER=your_username
-CLICKHOUSE_PASSWORD=your_password
+CLICKHOUSE_USER=data-processor
+CLICKHOUSE_PASSWORD=CHANGE_ME
 CLICKHOUSE_DATABASE=data_warehouse
+
+# Metabase Configuration
+METABASE_BASE_URL=https://metabase.devinvex.com
+METABASE_API_KEY=CHANGE_ME
+METABASE_TIMEOUT=30
 
 # Logging
 LOG_LEVEL=INFO
+TIMEOUT=30
+BATCH_SIZE=1000
 ```
 
 ### 2. Install Dependencies
@@ -38,6 +45,9 @@ LOG_LEVEL=INFO
 ```bash
 # Install Python dependencies
 pip install -r requirements.txt
+
+# Install test dependencies
+pip install -r requirements-test.txt
 
 # Or using poetry (if available)
 poetry install
@@ -74,6 +84,7 @@ Create `src/pipelines/my_first_pipeline.py`:
 import pandas as pd
 from pipelines.pipeline_factory import create_etl_pipeline
 from pipelines.tools.extractors.http_extractor import create_http_extractor
+from pipelines.tools.extractors.metabase_extractor import create_metabase_extractor
 from pipelines.tools.loaders.console_loader import create_console_loader
 from pipelines.tools.transformers.transformers import create_lambda_transformer
 
@@ -83,12 +94,20 @@ PIPELINE_REGISTRY = {}
 def create_my_pipeline():
     """Create your first data pipeline."""
     
-    # Create extractor
+    # Create extractor (HTTP API example)
     extractor = create_http_extractor(
         url="https://jsonplaceholder.typicode.com/posts",
         headers={"Accept": "application/json"},
         name="Posts Extractor"
     )
+    
+    # Alternative: Metabase extractor (if you have Metabase configured)
+    # metabase_extractor = create_metabase_extractor(
+    #     database_id=1,
+    #     table_id=2,
+    #     limit=100,
+    #     name="Metabase Data Extractor"
+    # )
     
     # Create transformer
     def transform_data(df):
@@ -173,6 +192,9 @@ ssh username@hostname "cd data-processor && ./run.sh list"
 # Check migration status
 ./run.sh migrate_status
 
+# Rollback migrations (if needed)
+./run.sh migrate_rollback 1  # Rollback last 1 migration
+
 # Drop and recreate database
 ./run.sh drop_db
 ```
@@ -233,8 +255,12 @@ ssh username@hostname "cd data-processor && ./run.sh list"
 - Check network connectivity and credentials
 
 **"Tests failing"**
-- Install test dependencies: `pip install pytest pytest-asyncio`
+- Install test dependencies: `pip install -r requirements-test.txt`
 - Check test results in `tests/results/`
+
+**"pytest not available"**
+- Install test dependencies: `pip install -r requirements-test.txt`
+- Ensure virtual environment is activated
 
 ### Getting Help
 

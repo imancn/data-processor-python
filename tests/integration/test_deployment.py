@@ -41,13 +41,14 @@ class TestDeploymentScenarios:
                 content = f.read()
             
             required_sections = [
-                'Step 1/7: Clean existing deployment',
-                'Step 2/7: Sync project',
-                'Step 3/7: Provision remote environment',
-                'Step 4/7: Run database migrations',
-                'Step 5/7: Reset logs and test framework',
-                'Step 6/7: Install cron jobs',
-                'Step 7/7: Verify deployment'
+                'Step 1/8: Clean existing deployment',
+                'Step 2/8: Sync project',
+                'Step 3/8: Provision remote environment',
+                'Step 4/8: Run database migrations',
+                'Step 5/8: Reset logs and test framework',
+                'Step 6/8: Install cron jobs',
+                'Step 7/8: Check production integrity',
+                'Step 8/8: Verify deployment'
             ]
             
             missing_sections = []

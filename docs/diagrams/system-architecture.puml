@@ -20,8 +20,8 @@ package "Data Processing Framework" {
     package "Pipeline Tools" as PipelineTools {
         package "Extractors" as Extractors {
             component [HTTP\nExtractor] as HttpExt
-            component [Database\nExtractor] as DbExt
-            component [File\nExtractor] as FileExt
+            component [ClickHouse\nExtractor] as ChExt
+            component [Metabase\nExtractor] as MetabaseExt
         }
         
         package "Transformers" as Transformers {
@@ -39,9 +39,10 @@ package "Data Processing Framework" {
     
     package "Operations & Deployment" as Operations {
         component [Migration\nSystem] as Migrations
-        component [Deployment\nScripts] as Deploy
+        component [8-Step\nDeployment] as Deploy
         component [Testing\nFramework] as Testing
         component [Backfill\nManager] as Backfill
+        component [Production\nIntegrity] as Integrity
     }
 }
 
@@ -51,15 +52,23 @@ cloud "External APIs" as ExternalAPIs {
     component [Data Sources] as DataSources
 }
 
+cloud "Metabase" as Metabase {
+    component [API] as MetabaseAPI
+    component [Database\nConnections] as MetabaseDB
+    component [Query\nEngine] as QueryEngine
+}
+
 database "ClickHouse Database" as ClickHouse {
     component [Tables] as Tables
     component [Schema] as Schema
+    component [data_warehouse] as DataWarehouse
 }
 
-node "Server Environment" as Server {
+node "Production Server" as Server {
     component [Cron Jobs] as CronJobs
     component [Processes] as Processes
     component [Logs] as Logs
+    component [Virtual\nEnvironment] as Venv
 }
 
 ' Connections
@@ -70,6 +79,11 @@ Operations --> Server : deploys to
 
 PipelineTools --> ExternalAPIs : extracts from
 PipelineTools --> ClickHouse : loads to
+PipelineTools --> Metabase : extracts from
 CoreFramework --> Server : schedules on
+
+Operations --> ClickHouse : validates connectivity
+Operations --> Metabase : validates integration
+Operations --> Server : verifies deployment
 
 @enduml

@@ -20,6 +20,7 @@ package "Operations & Deployment System" {
         component [Process Management] as ProcessManagement
         component [Cron Management] as CronManagement
         component [Health Verification] as HealthVerification
+        component [Production Integrity] as ProductionIntegrity
     }
     
     package "Local Operations" as LocalOps {
@@ -72,11 +73,18 @@ cloud "Database" as Database {
     component [Data] as Data
 }
 
+cloud "External Services" as ExternalServices {
+    component [Metabase] as Metabase
+    component [API Services] as APIServices
+    component [Data Sources] as DataSources
+}
+
 Deployment --> ProdServer : deploys to
 LocalOps --> DevEnv : runs in
 MigrationSystem --> Database : manages
 TestingFramework --> DevEnv : tests in
 BackfillSystem --> Database : processes data
+Deployment --> ExternalServices : integrates with
 
 @enduml
 ```
@@ -93,46 +101,54 @@ skinparam componentStyle rectangle
 
 package "Deployment Process" {
     
-    component [Step 1: Clean] as Step1 {
+    component [Step 1/8: Clean] as Step1 {
         + Kill existing processes
         + Remove old crons
         + Clean deployment directory
     }
     
-    component [Step 2: Sync] as Step2 {
+    component [Step 2/8: Sync] as Step2 {
         + Sync project files
         + Preserve logs
         + Update dependencies
     }
     
-    component [Step 3: Provision] as Step3 {
+    component [Step 3/8: Provision] as Step3 {
         + Create virtual environment
         + Install dependencies
         + Setup .env configuration
     }
     
-    component [Step 4: Migrate] as Step4 {
+    component [Step 4/8: Migrate] as Step4 {
         + Run database migrations
         + Verify schema
         + Check connectivity
     }
     
-    component [Step 5: Test] as Step5 {
+    component [Step 5/8: Test] as Step5 {
         + Reset logs
         + Test framework
         + Verify functionality
     }
     
-    component [Step 6: Schedule] as Step6 {
+    component [Step 6/8: Schedule] as Step6 {
         + Install cron jobs
         + Setup scheduling
         + Configure monitoring
     }
     
-    component [Step 7: Verify] as Step7 {
+    component [Step 7/8: Integrity] as Step7 {
+        + Check ClickHouse connectivity
+        + Verify Metabase integration
+        + Validate database schema
+        + Test external services
+    }
+    
+    component [Step 8/8: Verify] as Step8 {
         + Health checks
         + Data verification
         + Process monitoring
+        + Deployment summary
     }
 }
 
@@ -149,13 +165,20 @@ cloud "Target Server" as TargetServer {
     component [Processes] as Processes
 }
 
+cloud "External Services" as ExternalServices {
+    component [ClickHouse] as ClickHouse
+    component [Metabase] as Metabase
+    component [Database Schema] as DatabaseSchema
+}
+
 Step1 --> TargetServer : cleans
 Step2 --> TargetServer : syncs
 Step3 --> TargetServer : provisions
 Step4 --> TargetServer : migrates
 Step5 --> TargetServer : tests
 Step6 --> TargetServer : schedules
-Step7 --> TargetServer : verifies
+Step7 --> ExternalServices : validates
+Step8 --> TargetServer : verifies
 
 SourceEnv --> Step2 : provides files
 
@@ -168,7 +191,9 @@ SourceEnv --> Step2 : provides files
 - **Process Management**: Automatic process cleanup and management
 - **Cron Management**: Automatic cron job installation and removal
 - **Health Verification**: Post-deployment health checks
+- **Production Integrity**: Comprehensive service validation
 - **Flexible Deployment**: Supports multiple deployment targets
+- **Dependency Management**: Automatic dependency installation with fallbacks
 
 ## ⚙️ Local Operations System
 
@@ -388,6 +413,7 @@ TestResults --> CICD : integrates with
 - **Coverage Reports**: HTML and JSON coverage analysis
 - **CI/CD Integration**: JUnit XML for pipeline integration
 - **Performance Metrics**: Test duration and performance tracking
+- **Production Ready**: All tests pass in production environment
 
 ## 📊 Backfill System
 
@@ -488,6 +514,9 @@ note right: ./deploy.sh user host
 :Verify Deployment;
 note right: Health checks\nand data verification
 
+:Production Integrity Check;
+note right: ClickHouse connectivity\nMetabase integration\nDatabase schema validation
+
 :Monitor Operations;
 note right: Logs, data counts,\nand performance
 
@@ -508,6 +537,7 @@ stop
 - **Idempotent Deployment**: Safe, repeatable deployments
 - **Process Management**: Clean process lifecycle management
 - **Health Monitoring**: Comprehensive health checks and verification
+- **Production Integrity**: Full service validation and integration testing
 - **Data Management**: Complete data processing and monitoring capabilities
 
 ### **Developer Experience**
@@ -521,5 +551,6 @@ stop
 - **Migration Management**: Version-controlled database schema management
 - **Monitoring**: Built-in logging, health checks, and data monitoring
 - **Reliability**: Idempotent operations and comprehensive error handling
+- **Service Integration**: Full ClickHouse and Metabase integration
 
 The Operations & Deployment system provides a complete foundation for managing the data processing framework in production environments with enterprise-grade reliability, monitoring, and operational excellence.

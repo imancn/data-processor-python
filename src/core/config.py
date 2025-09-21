@@ -153,6 +153,19 @@ class Config:
             'timeout': self._settings.timeout
         }
     
+    def get_metabase_config(self) -> Dict[str, Any]:
+        """
+        Get Metabase configuration.
+        
+        Returns:
+            Dictionary with Metabase configuration
+        """
+        return {
+            'base_url': self._settings.metabase_base_url,
+            'api_key': self._settings.metabase_api_key,
+            'timeout': self._settings.metabase_timeout
+        }
+    
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert configuration to dictionary.

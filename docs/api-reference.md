@@ -46,6 +46,7 @@ config.update(log_level='DEBUG', timeout=60)
 - `get_bool(key: str, default: bool = False) -> bool` - Get boolean value
 - `get_clickhouse_config() -> Dict[str, Any]` - Get ClickHouse configuration
 - `get_api_config() -> Optional[Dict[str, Any]]` - Get API configuration
+- `get_metabase_config() -> Dict[str, Any]` - Get Metabase configuration
 - `to_dict() -> Dict[str, Any]` - Convert to dictionary
 - `update(**kwargs) -> None` - Update configuration values
 - `reload() -> None` - Reload from environment
@@ -236,6 +237,69 @@ from pipelines.tools.extractors.clickhouse_extractor import create_clickhouse_ex
 extractor = create_clickhouse_extractor(
     query="SELECT * FROM my_table",
     name="Database Extractor"
+)
+```
+
+#### Metabase Extractor (`src/pipelines/tools/extractors/metabase_extractor.py`)
+
+Extract data from any table in any database added to Metabase using the Metabase API.
+
+```python
+from pipelines.tools.extractors.metabase_extractor import create_metabase_extractor
+
+# Extract from a specific table
+extractor = create_metabase_extractor(
+    base_url="https://metabase.devinvex.com",
+    api_key="CHANGE_ME",
+    database_id=1,
+    table_id=2,
+    limit=1000,
+    name="Metabase Table Extractor"
+)
+
+# Execute custom SQL query
+query_extractor = create_metabase_extractor(
+    base_url="https://metabase.devinvex.com",
+    api_key="CHANGE_ME",
+    database_id=1,
+    native_query="SELECT COUNT(*) as total FROM users WHERE active = true",
+    name="Metabase Query Extractor"
+)
+
+# Using configuration (set METABASE_BASE_URL and METABASE_API_KEY in .env)
+config_extractor = create_metabase_extractor(
+    database_id=1,
+    table_id=2,
+    name="Metabase Config Extractor"
+)
+```
+
+**Configuration:**
+```bash
+# Add to .env file
+METABASE_BASE_URL=https://metabase.devinvex.com
+METABASE_API_KEY=CHANGE_ME
+METABASE_TIMEOUT=30
+```
+
+**Additional Functions:**
+```python
+from pipelines.tools.extractors.metabase_extractor import (
+    get_metabase_databases,
+    get_metabase_tables
+)
+
+# List available databases
+databases = await get_metabase_databases(
+    base_url="https://metabase.devinvex.com",
+    api_key="CHANGE_ME"
+)
+
+# List tables in a database
+tables = await get_metabase_tables(
+    base_url="https://metabase.devinvex.com",
+    api_key="CHANGE_ME",
+    database_id=1
 )
 ```
 
@@ -444,7 +508,7 @@ jobs = list_cron_jobs()
 
 #### `ClickHouseMigrationManager` Class
 
-Manage database migrations.
+Manage database migrations with comprehensive status tracking and rollback capabilities.
 
 ```python
 from migrations.migration_manager import ClickHouseMigrationManager
@@ -456,7 +520,21 @@ manager.run_migrations()
 
 # Show status
 manager.show_status()
+
+# Get migration status as dictionary
+status = manager.get_migration_status()
+
+# Rollback migrations
+manager.rollback_migrations(count=1)
 ```
+
+**Methods:**
+- `run_migrations() -> bool` - Run all pending migrations
+- `show_status() -> None` - Display migration status in console
+- `get_migration_status() -> Dict[str, Any]` - Get migration status as dictionary
+- `rollback_migrations(count: int = 1) -> bool` - Rollback the last N migrations
+- `get_executed_migrations() -> List[Migration]` - Get list of executed migrations
+- `get_pending_migrations() -> List[Migration]` - Get list of pending migrations
 
 ## 🧪 Testing
 

@@ -13,6 +13,7 @@ package "Core Framework" {
     class Config {
         +get(key, default)
         +get_clickhouse_config()
+        +get_metabase_config()
         +project_root
         +log_level
         +log_file
@@ -75,6 +76,18 @@ package "Pipeline Tools" {
             +query: string
             +client: ClickHouseClient
             +extract_from_clickhouse()
+        }
+        
+        class MetabaseExtractor {
+            +base_url: string
+            +api_key: string
+            +database_id: int
+            +table_id: int
+            +native_query: string
+            +extract_from_metabase()
+            +execute_native_query()
+            +discover_databases()
+            +discover_tables()
         }
     }
     
@@ -182,6 +195,14 @@ package "Scripts & Operations" {
         +provision_environment()
         +install_cron_jobs()
         +verify_deployment()
+        +check_production_integrity()
+    }
+    
+    class ProductionIntegrityChecker {
+        +check_clickhouse_connectivity()
+        +check_metabase_integration()
+        +validate_database_schema()
+        +test_external_services()
     }
     
     class RunShell {
@@ -206,12 +227,14 @@ package "Testing System" {
         +test_framework_integration()
         +test_deployment_scenarios()
         +test_end_to_end_workflow()
+        +test_metabase_integration()
     }
     
     class UnitTests {
         +test_core_components()
         +test_pipeline_factory()
         +test_configuration()
+        +test_metabase_extractor()
     }
     
     class TestRunner {
@@ -228,6 +251,12 @@ cloud "External APIs" as ExtAPI {
     interface "Data Sources"
 }
 
+cloud "Metabase" as Metabase {
+    interface "API"
+    interface "Database Connections"
+    interface "Query Engine"
+}
+
 database "ClickHouse Database" as CH {
     entity "User Tables" {
         - Dynamic table discovery
@@ -240,7 +269,7 @@ database "ClickHouse Database" as CH {
     }
 }
 
-node "Server Environment" as Server {
+node "Production Server" as Server {
     class "Cron Jobs" {
         - Automatic pipeline scheduling
         - Log rotation
@@ -257,6 +286,13 @@ node "Server Environment" as Server {
         - /containers/data-processor
         - Virtual environment
         - Configuration files
+    }
+    
+    class "Production Integrity" {
+        - ClickHouse connectivity
+        - Metabase integration
+        - Database schema validation
+        - Service health checks
     }
 }
 
@@ -286,6 +322,7 @@ MigrationManager --> CH : creates/updates schema
 RunScript --> MainApp : invokes
 BackfillManager --> MainApp : uses jobs
 DeploymentScript --> Server : deploys to
+DeploymentScript --> ProductionIntegrityChecker : validates
 RunShell --> MainApp : local operations
 
 ' Relationships - Testing
@@ -301,10 +338,12 @@ HttpExtractor --> ExtAPI : fetches data
 ClickHouseExtractor --> CH : queries
 ClickHouseLoader --> CH : stores data
 ClickHouseUpsertLoader --> CH : upserts data
+MetabaseExtractor --> Metabase : queries
 
 ' Relationships - Server
 Server --> MainApp : hosts
 Server --> CH : connects to
+Server --> Metabase : integrates with
 
 note top of Pipeline : "Generic pipeline interface\nImplemented by user-defined\npipeline modules"
 
@@ -312,6 +351,8 @@ note right of PipelineModule : "User implements:\n- register_pipelines()\n- get_
 
 note bottom of CH : "Supports any table schema\nDynamic discovery\nIdempotent operations"
 
-note left of Server : "Idempotent deployment\nProcess management\nAutomatic cron setup"
+note left of Server : "8-step deployment\nProduction integrity checks\nProcess management\nAutomatic cron setup"
+
+note right of Metabase : "Production integration\nAPI key authentication\nDatabase discovery\nCustom SQL queries"
 
 @enduml

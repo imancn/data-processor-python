@@ -13,6 +13,7 @@ sys.path.insert(0, str(project_root))
 from src.pipelines.tools import (
     create_http_extractor,
     create_clickhouse_extractor,
+    create_metabase_extractor,
     create_lambda_transformer,
     create_clickhouse_loader,
     create_console_loader
@@ -31,6 +32,17 @@ class TestPipelineTools:
     def test_clickhouse_extractor_creation(self):
         """Test creating a ClickHouse extractor."""
         extractor = create_clickhouse_extractor('SELECT * FROM test_table')
+        assert extractor is not None
+        assert callable(extractor)
+    
+    def test_metabase_extractor_creation(self):
+        """Test creating a Metabase extractor."""
+        extractor = create_metabase_extractor(
+            base_url="https://test.metabase.com",
+            api_key="test_key",
+            database_id=1,
+            table_id=2
+        )
         assert extractor is not None
         assert callable(extractor)
     
@@ -62,6 +74,15 @@ class TestPipelineTools:
         ch_extractor = create_clickhouse_extractor('SELECT 1')
         assert callable(ch_extractor)
         
+        # Test Metabase extractor
+        metabase_extractor = create_metabase_extractor(
+            base_url="https://test.metabase.com",
+            api_key="test_key",
+            database_id=1,
+            table_id=2
+        )
+        assert callable(metabase_extractor)
+        
         # Test transformer
         transformer = create_lambda_transformer(lambda df: df)
         assert callable(transformer)
@@ -72,3 +93,37 @@ class TestPipelineTools:
         
         console_loader = create_console_loader()
         assert callable(console_loader)
+    
+    # Metabase Extractor Tests
+    def test_metabase_extractor_query_creation(self):
+        """Test creating a query extractor."""
+        extractor = create_metabase_extractor(
+            base_url="https://test.metabase.com",
+            api_key="test_key",
+            database_id=1,
+            native_query="SELECT * FROM users",
+            name="Test Query Extractor"
+        )
+        
+        assert callable(extractor)
+        assert extractor.__name__ == "extractor_func"
+    
+    def test_create_metabase_extractor_invalid_params(self):
+        """Test creating extractor with invalid parameters."""
+        # Test with neither table_id nor native_query
+        with pytest.raises(ValueError, match="Either table_id or native_query must be provided"):
+            create_metabase_extractor(
+                base_url="https://test.metabase.com",
+                api_key="test_key",
+                database_id=1
+            )
+        
+        # Test with both table_id and native_query
+        with pytest.raises(ValueError, match="Cannot specify both table_id and native_query"):
+            create_metabase_extractor(
+                base_url="https://test.metabase.com",
+                api_key="test_key",
+                database_id=1,
+                table_id=2,
+                native_query="SELECT * FROM users"
+            )

@@ -23,6 +23,7 @@ Example:
 from .extractors import (
     create_http_extractor,
     create_clickhouse_extractor,
+    create_metabase_extractor,
 )
 
 from .transformers import (
@@ -40,6 +41,7 @@ __all__ = [
     # Extractors
     'create_http_extractor',
     'create_clickhouse_extractor',
+    'create_metabase_extractor',
     
     # Transformers
     'create_lambda_transformer',

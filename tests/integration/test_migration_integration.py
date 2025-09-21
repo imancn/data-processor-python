@@ -39,12 +39,12 @@ class TestMigrationIntegration:
         manager = ClickHouseMigrationManager()
         
         try:
-            # Test rollback (if implemented)
+            # Test rollback
             result = manager.rollback_migrations(1)
             assert isinstance(result, bool)
         except Exception as e:
-            # Skip if database is not available or rollback not implemented
-            pytest.skip(f"Rollback not available: {e}")
+            # Skip if database is not available
+            pytest.skip(f"Database not available: {e}")
     
     def test_migration_file_validation(self):
         """Test migration file validation."""

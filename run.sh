@@ -26,22 +26,29 @@ check_dependencies() {
         error "Python3 is not installed"
         exit 1
     fi
-    # Use system Python directly
-    PY="python3"
-    log "Using system Python: $PY"
+    
+    # Check for virtual environment first
+    if [ -f ".venv/bin/python" ]; then
+        PY=".venv/bin/python"
+        log "Using virtual environment Python: $PY"
+    elif [ -f "venv/bin/python" ]; then
+        PY="venv/bin/python"
+        log "Using virtual environment Python: $PY"
+    else
+        PY="python3"
+        log "Using system Python: $PY"
+    fi
     log "Dependencies check completed"
 }
 
 run_tests() {
     local category="${1:-all}"
     log "Running tests for category: $category"
-    PY="python3"
     (cd "$PROJECT_DIR" && "$PY" tests/framework/run_tests.py "$category")
 }
 
 list_test_categories() {
     log "Listing available test categories..."
-    PY="python3"
     (cd "$PROJECT_DIR" && "$PY" tests/framework/run_tests.py --list)
 }
 
@@ -49,14 +56,13 @@ create_test_template() {
     if [ -z "$1" ] || [ -z "$2" ]; then
         error "Category and test name are required. Usage: ./run.sh create_test CATEGORY TEST_NAME"
         echo "Available categories:"
-        (cd "$PROJECT_DIR" && python3 tests/test_runner.py --list)
+        (cd "$PROJECT_DIR" && "$PY" tests/framework/run_tests.py --list)
         exit 1
     fi
     local category="$1"
     local test_name="$2"
     log "Creating test template for category: $category, name: $test_name"
-    PY="python3"
-    (cd "$PROJECT_DIR" && "$PY" tests/test_runner.py --create "$category" "$test_name")
+    (cd "$PROJECT_DIR" && "$PY" tests/framework/run_tests.py --create "$category" "$test_name")
 }
 
 cron_run() {

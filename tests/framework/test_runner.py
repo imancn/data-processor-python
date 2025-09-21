@@ -22,6 +22,31 @@ class TestFrameworkRunner:
         self.discovery = TestFrameworkDiscovery(self.config)
         self.reporter = TestFrameworkReporter(self.config.results_dir)
     
+    def _get_python_executable(self) -> str:
+        """Get the appropriate Python executable to use for running tests."""
+        # Check for virtual environment first
+        venv_python = self.project_root / '.venv' / 'bin' / 'python'
+        if venv_python.exists():
+            return str(venv_python)
+        
+        # Check for alternative virtual environment locations
+        alt_venv_python = self.project_root / 'venv' / 'bin' / 'python'
+        if alt_venv_python.exists():
+            return str(alt_venv_python)
+        
+        # Fall back to system python3
+        return 'python3'
+    
+    def _is_pytest_available(self, python_cmd: str) -> bool:
+        """Check if pytest is available in the Python environment."""
+        try:
+            import subprocess
+            result = subprocess.run([python_cmd, '-c', 'import pytest'], 
+                                  capture_output=True, text=True)
+            return result.returncode == 0
+        except Exception:
+            return False
+    
     def run_tests(self, category: str, verbose: bool = True, coverage: bool = True) -> Dict[str, Any]:
         """Run tests for a specific category."""
         print(f"Running {category} tests...")
@@ -36,6 +61,13 @@ class TestFrameworkRunner:
         print(f"Found {len(test_files)} test files:")
         for test_file in test_files:
             print(f"  - {test_file}")
+        
+        # Check if pytest is available
+        python_cmd = self._get_python_executable()
+        if not self._is_pytest_available(python_cmd):
+            print("Error: pytest is not available. Please install test dependencies:")
+            print("  pip install -r requirements-test.txt")
+            return self._create_error_summary(category, "pytest not available")
         
         # Run tests
         results = self._run_pytest_tests(test_files, category, verbose, coverage)
@@ -76,7 +108,8 @@ class TestFrameworkRunner:
                 'tests_skipped': 0
             }
         
-        cmd = ['python3', '-m', 'pytest']
+        python_cmd = self._get_python_executable()
+        cmd = [python_cmd, '-m', 'pytest']
         
         if verbose:
             cmd.append('-v')
@@ -187,6 +220,32 @@ class TestFrameworkRunner:
             'category': category,
             'test_files': [],
             'results': {},
+            'summary': {
+                'tests_run': 0,
+                'tests_passed': 0,
+                'tests_failed': 0,
+                'tests_skipped': 0,
+                'duration': 0,
+                'coverage_percentage': 0
+            }
+        }
+    
+    def _create_error_summary(self, category: str, error_message: str) -> Dict[str, Any]:
+        """Create an error summary for failed test runs."""
+        return {
+            'category': category,
+            'test_files': [],
+            'results': {
+                'returncode': 1,
+                'stdout': '',
+                'stderr': error_message,
+                'duration': 0,
+                'command': '',
+                'tests_run': 0,
+                'tests_passed': 0,
+                'tests_failed': 0,
+                'tests_skipped': 0
+            },
             'summary': {
                 'tests_run': 0,
                 'tests_passed': 0,

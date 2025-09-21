@@ -41,11 +41,13 @@ Guidelines for contributing to and extending the framework.
 - **🎯 Zero Business Logic**: Completely generic - works for any data processing use case
 - **🔄 Auto-Discovery**: Just add your pipeline files - framework handles the rest
 - **🚀 Production Ready**: Idempotent deployment, process management, health monitoring
-- **🧪 Test-Driven**: Comprehensive test suite with coverage reporting
+- **🧪 Test-Driven**: Comprehensive test suite with coverage reporting and JSON output
 - **📊 Observable**: Structured logging, monitoring, and operational insights
 - **⚙️ Operational**: Complete toolkit for development, deployment, and maintenance
 - **🔧 Extensible**: Plugin architecture for extractors, transformers, and loaders
 - **📈 Scalable**: Designed for enterprise data processing workloads
+- **🔄 Migration System**: Advanced database migration with rollback capabilities
+- **🧹 Clean Architecture**: No hardcoded business logic or domain-specific code
 
 ## 🤝 Contributing
 

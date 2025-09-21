@@ -45,13 +45,11 @@ class TestMigrationManager:
         manager = ClickHouseMigrationManager()
         
         try:
-            # Check if the method exists
-            if hasattr(manager, 'get_migration_status'):
-                status = manager.get_migration_status()
-                assert isinstance(status, dict)
-            else:
-                # Method doesn't exist, skip this test
-                pytest.skip("get_migration_status method not implemented")
+            status = manager.get_migration_status()
+            assert isinstance(status, dict)
+            assert "executed_count" in status
+            assert "pending_count" in status
+            assert "total_migrations" in status
         except Exception as e:
             # Expected if database is not available
             assert "connection" in str(e).lower() or "database" in str(e).lower()
