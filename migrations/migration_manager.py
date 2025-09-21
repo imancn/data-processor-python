@@ -138,6 +138,54 @@ class ClickHouseMigrationManager:
         log_with_timestamp("All migrations completed successfully", "Migration Manager")
         return True
     
+    def rollback_migrations(self, count: int = 1) -> bool:
+        """Rollback the last N migrations."""
+        if not self.connect():
+            return False
+        
+        if not self.create_migrations_table():
+            return False
+        
+        executed = self.get_executed_migrations()
+        
+        if not executed:
+            log_with_timestamp("No migrations to rollback", "Migration Manager")
+            return True
+        
+        # Get the last N migrations to rollback
+        migrations_to_rollback = executed[-count:]
+        
+        log_with_timestamp(f"Rolling back {len(migrations_to_rollback)} migrations", "Migration Manager")
+        
+        try:
+            # Remove the migration records from the database
+            for migration_name in migrations_to_rollback:
+                self.client.command(f"DELETE FROM migrations WHERE name = '{migration_name}'")
+                log_with_timestamp(f"Rolled back migration: {migration_name}", "Migration Manager")
+            
+            log_with_timestamp("Rollback completed successfully", "Migration Manager")
+            return True
+            
+        except Exception as e:
+            log_with_timestamp(f"Failed to rollback migrations: {e}", "Migration Manager", "error")
+            return False
+    
+    def get_migration_status(self) -> Dict[str, Any]:
+        """Get migration status as a dictionary."""
+        if not self.connect():
+            return {"error": "Failed to connect to database"}
+        
+        executed = self.get_executed_migrations()
+        pending = self.get_pending_migrations()
+        
+        return {
+            "executed_count": len(executed),
+            "pending_count": len(pending),
+            "executed_migrations": executed,
+            "pending_migrations": [m.name for m in pending],
+            "total_migrations": len(executed) + len(pending)
+        }
+    
     def show_status(self):
         """Show migration status."""
         if not self.connect():
