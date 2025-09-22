@@ -1,5 +1,12 @@
-# src/extractors/http_extractor.py
-from typing import Optional
+# src/pipelines/tools/extractors/http_extractor.py
+"""
+HTTP Extractor for data processing pipelines.
+
+This module provides functionality to extract data from HTTP APIs,
+supporting various HTTP methods and authentication mechanisms.
+"""
+
+from typing import Optional, Dict, Any
 import asyncio
 import aiohttp
 import pandas as pd
@@ -8,177 +15,155 @@ from core.logging import log_with_timestamp
 
 async def extract_from_http(
     url: str,
-    headers: Optional[dict] = None,
-    params: Optional[dict] = None,
+    headers: Optional[Dict[str, str]] = None,
+    params: Optional[Dict[str, Any]] = None,
     method: str = "GET",
-    data: Optional[dict] = None,
-    timeout: int = None
+    data: Optional[Dict[str, Any]] = None,
+    timeout: int = 30,
+    name: str = "HTTP Extractor"
 ) -> pd.DataFrame:
     """
-    Generic HTTP extractor that returns JSON response as pandas DataFrame.
+    Extract data from HTTP API endpoint.
+    
+    Args:
+        url: The URL to extract data from
+        headers: Optional HTTP headers
+        params: Optional query parameters
+        method: HTTP method (GET, POST, PUT, DELETE)
+        data: Optional request body data
+        timeout: Request timeout in seconds
+        name: Name for logging purposes
+        
+    Returns:
+        pandas DataFrame containing the extracted data
+        
+    Raises:
+        Exception: If the HTTP request fails
     """
     try:
-        timeout = timeout or config.timeout
-        total_attempts = 3
-        backoff = 0.7
-        json_response = None
+        log_with_timestamp(f"Starting HTTP extraction from {url}", name)
         
-        for attempt in range(1, total_attempts + 1):
-            try:
-                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
-                    async with session.request(
-                        method=method,
-                        url=url,
-                        headers=headers,
-                        params=params,
-                        json=data
-                    ) as response:
-                        response.raise_for_status()
-                        json_response = await response.json()
-                        break
-            except aiohttp.ClientError as e:
-                log_with_timestamp(f"Attempt {attempt}/{total_attempts} failed for {url}: {e}", "HTTP Extractor", "warning", category="retry")
-                if attempt < total_attempts:
-                    await asyncio.sleep(backoff * attempt)
-                else:
-                    # Last attempt failed, log and return empty DataFrame
-                    log_with_timestamp(f"All {total_attempts} attempts failed for {url}: {e}", "HTTP Extractor", "error", category="network")
-                    return pd.DataFrame()
-
-        # Convert JSON response to DataFrame (only if we got a successful response)
-        if json_response is not None:
-            if isinstance(json_response, list):
-                return pd.DataFrame(json_response)
-            elif isinstance(json_response, dict):
-                for key in ['data', 'results', 'items']:
-                    if key in json_response and isinstance(json_response[key], list):
-                        return pd.DataFrame(json_response[key])
-                    elif key in json_response and isinstance(json_response[key], dict):
-                        # Handle API response where data is a dict with symbol keys
-                        # Convert to DataFrame of individual records
-                        data_dict = json_response[key]
-                        records = [data_dict[symbol] for symbol in data_dict.keys()]
-                        return pd.DataFrame(records)
-                # If no standard key found, try to convert the whole response
-                return pd.DataFrame([json_response])
-            else:
-                log_with_timestamp(f"Unexpected HTTP response format: {type(json_response)}", "HTTP Extractor", "warning")
-                return pd.DataFrame()
-        else:
-            # No successful response
-            return pd.DataFrame()
-            
-    except Exception as e:
-        log_with_timestamp(f"An unexpected error occurred during HTTP extraction for {url}: {e}", "HTTP Extractor", "error", category="unexpected")
-        return pd.DataFrame()
-
-async def extract_from_paginated_http(
-    url: str,
-    headers: Optional[dict] = None,
-    params: Optional[dict] = None,
-    method: str = "GET",
-    data: Optional[dict] = None,
-    timeout: int = None,
-    max_pages: int = 10,
-    page_param: str = "page",
-    page_size_param: str = "per_page",
-    page_size: int = 100
-) -> pd.DataFrame:
-    """
-    HTTP extractor for paginated APIs that returns all pages as a single DataFrame.
-    """
-    try:
-        all_data = []
-        page = 1
+        # Set default headers
+        if headers is None:
+            headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Data-Processor/1.0'
+            }
         
-        while page <= max_pages:
-            # Add pagination parameters
-            page_params = params.copy() if params else {}
-            page_params[page_param] = page
-            page_params[page_size_param] = page_size
+        # Create session with timeout
+        timeout_config = aiohttp.ClientTimeout(total=timeout)
+        
+        async with aiohttp.ClientSession(timeout=timeout_config) as session:
+            # Prepare request arguments
+            request_kwargs = {
+                'headers': headers,
+                'params': params
+            }
             
-            # Extract data for current page
-            page_df = await extract_from_http(
-                url=url,
-                headers=headers,
-                params=page_params,
-                method=method,
-                data=data,
-                timeout=timeout
-            )
+            # Add data for POST/PUT requests
+            if data and method.upper() in ['POST', 'PUT', 'PATCH']:
+                request_kwargs['json'] = data
             
-            if page_df.empty:
-                break
+            # Make the HTTP request
+            async with session.request(method.upper(), url, **request_kwargs) as response:
+                # Check if request was successful
+                response.raise_for_status()
                 
-            all_data.append(page_df)
-            page += 1
-            
-            # Small delay to avoid rate limiting
-            await asyncio.sleep(0.1)
+                # Get response content
+                content_type = response.headers.get('content-type', '').lower()
+                
+                if 'application/json' in content_type:
+                    data = await response.json()
+                    log_with_timestamp(f"Received JSON response with {len(data) if isinstance(data, list) else 1} records", name)
+                    
+                    # Convert to DataFrame
+                    if isinstance(data, list):
+                        df = pd.DataFrame(data)
+                    elif isinstance(data, dict):
+                        # If it's a single object, wrap it in a list
+                        df = pd.DataFrame([data])
+                    else:
+                        # If it's not a list or dict, create a single-row DataFrame
+                        df = pd.DataFrame([{'data': data}])
+                        
+                elif 'text/csv' in content_type:
+                    # Handle CSV response
+                    csv_content = await response.text()
+                    from io import StringIO
+                    df = pd.read_csv(StringIO(csv_content))
+                    log_with_timestamp(f"Received CSV response with {len(df)} records", name)
+                    
+                else:
+                    # Handle other content types as text
+                    text_content = await response.text()
+                    df = pd.DataFrame([{'content': text_content}])
+                    log_with_timestamp(f"Received text response with {len(text_content)} characters", name)
+                
+                log_with_timestamp(f"Successfully extracted {len(df)} records from {url}", name)
+                return df
+                
+    except aiohttp.ClientError as e:
+        error_msg = f"HTTP client error during extraction from {url}: {e}"
+        log_with_timestamp(error_msg, name, "error")
+        raise Exception(error_msg) from e
         
-        if all_data:
-            return pd.concat(all_data, ignore_index=True)
-        else:
-            return pd.DataFrame()
-            
+    except asyncio.TimeoutError as e:
+        error_msg = f"Timeout during HTTP extraction from {url} (timeout: {timeout}s)"
+        log_with_timestamp(error_msg, name, "error")
+        raise Exception(error_msg) from e
+        
     except Exception as e:
-        log_with_timestamp(f"Paginated HTTP extraction failed for {url}: {e}", "HTTP Extractor", "error")
-        return pd.DataFrame()
+        error_msg = f"Unexpected error during HTTP extraction from {url}: {e}"
+        log_with_timestamp(error_msg, name, "error")
+        raise Exception(error_msg) from e
 
 def create_http_extractor(
     url: str,
-    headers: Optional[dict] = None,
-    params: Optional[dict] = None,
+    headers: Optional[Dict[str, str]] = None,
+    params: Optional[Dict[str, Any]] = None,
     method: str = "GET",
-    data: Optional[dict] = None,
-    timeout: int = None,
+    data: Optional[Dict[str, Any]] = None,
+    timeout: int = 30,
     name: str = "HTTP Extractor"
-):
+) -> callable:
     """
-    Factory function to create HTTP extractor with pandas DataFrame output.
+    Create an HTTP extractor function with pre-configured parameters.
+    
+    Args:
+        url: The URL to extract data from
+        headers: Optional HTTP headers
+        params: Optional query parameters
+        method: HTTP method (GET, POST, PUT, DELETE)
+        data: Optional request body data
+        timeout: Request timeout in seconds
+        name: Name for logging purposes
+        
+    Returns:
+        Async function that performs the HTTP extraction
+        
+    Example:
+        >>> extractor = create_http_extractor(
+        ...     url="https://api.example.com/data",
+        ...     headers={"Authorization": "Bearer token"},
+        ...     params={"limit": 100}
+        ... )
+        >>> data = await extractor()
     """
-    async def extractor() -> pd.DataFrame:
-        log_with_timestamp(f"Running {name} from {url}", "HTTP Extractor")
+    async def http_extractor_func() -> pd.DataFrame:
         return await extract_from_http(
             url=url,
             headers=headers,
             params=params,
             method=method,
             data=data,
-            timeout=timeout
-        )
-    
-    return extractor
-
-def create_paginated_http_extractor(
-    url: str,
-    headers: Optional[dict] = None,
-    params: Optional[dict] = None,
-    method: str = "GET",
-    data: Optional[dict] = None,
-    timeout: int = None,
-    max_pages: int = 10,
-    page_param: str = "page",
-    page_size_param: str = "per_page",
-    page_size: int = 100,
-    name: str = "Paginated HTTP Extractor"
-):
-    """
-    Factory function to create paginated HTTP extractor with pandas DataFrame output.
-    """
-    async def extractor() -> pd.DataFrame:
-        log_with_timestamp(f"Running {name} from {url} (max {max_pages} pages)", "HTTP Extractor")
-        return await extract_from_paginated_http(
-            url=url,
-            headers=headers,
-            params=params,
-            method=method,
-            data=data,
             timeout=timeout,
-            max_pages=max_pages,
-            page_param=page_param,
-            page_size_param=page_size_param,
-            page_size=page_size
+            name=name
         )
     
-    return extractor
+    return http_extractor_func
+
+# Public API
+__all__ = [
+    'extract_from_http',
+    'create_http_extractor',
+]

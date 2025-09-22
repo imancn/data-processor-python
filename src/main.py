@@ -18,6 +18,7 @@ from core import (
     validate_pipeline_config, PipelineConfig, ValidationError,
     log_pipeline_stage, PerformanceLogger
 )
+from pipelines.pipeline_registry import pipeline_registry, get_all_pipelines
 
 # Import migration manager
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'migrations'))
@@ -165,6 +166,7 @@ def _discover_pipeline_modules() -> list:
     pipelines_dir = Path(__file__).parent / 'pipelines'
     pipeline_modules = []
     
+    # Look for pipeline files in the main pipelines directory
     for file_path in pipelines_dir.glob('*_pipeline.py'):
         if file_path.name != '__init__.py':
             pipeline_modules.append(file_path.stem)
@@ -186,28 +188,22 @@ def _register_pipeline_from_module(module: Any, module_name: str) -> int:
     """Register pipelines from a loaded module."""
     registered_count = 0
     
-    # Look for register function and pipeline registry
+    # Look for register function
     if hasattr(module, 'register_pipelines'):
         module.register_pipelines()
         log_with_timestamp(f"Registered pipelines from {module_name}", "Main")
-    
-    if hasattr(module, 'get_pipeline_registry'):
-        registry = module.get_pipeline_registry()
-        
-        # Register each pipeline as a cron job
-        for pipeline_name, pipeline_data in registry.items():
-            schedule = pipeline_data.get('schedule', '0 * * * *')  # Default hourly
-            description = pipeline_data.get('description', f'{pipeline_name} pipeline')
-            
-            register_cron_job(
-                job_name=pipeline_name,
-                pipeline=pipeline_data['pipeline'],
-                schedule=schedule,
-                description=description
-            )
-            registered_count += 1
+        registered_count += 1
     
     return registered_count
+
+def get_registered_pipelines() -> Dict[str, Dict[str, Any]]:
+    """Get all registered pipelines from the pipeline registry."""
+    return get_all_pipelines()
+
+def get_scheduled_pipelines() -> Dict[str, Dict[str, Any]]:
+    """Get all scheduled pipelines (non-manual)."""
+    return {name: info for name, info in get_all_pipelines().items() 
+            if info.get('schedule') != 'manual'}
 
 
 def register_all_pipelines():

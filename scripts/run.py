@@ -46,7 +46,12 @@ def list_available_pipelines():
     # List cron jobs
     cron_jobs = list_cron_jobs()
     for job_name, job_info in cron_jobs.items():
-        log_with_timestamp(f"  - {job_name} (Cron: {job_info['schedule']})", "Run Script")
+        config = job_info.get('config')
+        if config and hasattr(config, 'schedule'):
+            schedule = config.schedule
+        else:
+            schedule = 'Unknown'
+        log_with_timestamp(f"  - {job_name} (Cron: {schedule})", "Run Script")
 
 def main():
     """Main entry point."""

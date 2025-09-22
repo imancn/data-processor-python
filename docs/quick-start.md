@@ -4,282 +4,155 @@ Get up and running with the Data Processing Framework in minutes.
 
 ## 🚀 Prerequisites
 
-- Python 3.9 or higher
+- Python 3.9+
 - ClickHouse database access
-- Basic understanding of ETL/ELT concepts
+- Basic ETL/ELT knowledge
 
-## ⚡ Quick Setup
+## ⚡ Setup
 
-### 1. Environment Configuration
-
+### 1. Configure Environment
 ```bash
-# Copy environment template
 cp env.example .env
-
-# Edit configuration
-vim .env
+# Edit .env with your settings
 ```
 
-Key configuration variables:
+### 2. Install & Setup
 ```bash
-# ClickHouse Database
-CLICKHOUSE_HOST=localhost
-CLICKHOUSE_PORT=8123
-CLICKHOUSE_USER=data-processor
-CLICKHOUSE_PASSWORD=CHANGE_ME
-CLICKHOUSE_DATABASE=data_warehouse
-
-# Metabase Configuration
-METABASE_BASE_URL=https://metabase.devinvex.com
-METABASE_API_KEY=CHANGE_ME
-METABASE_TIMEOUT=30
-
-# Logging
-LOG_LEVEL=INFO
-TIMEOUT=30
-BATCH_SIZE=1000
-```
-
-### 2. Install Dependencies
-
-```bash
-# Install Python dependencies
 pip install -r requirements.txt
-
-# Install test dependencies
-pip install -r requirements-test.txt
-
-# Or using poetry (if available)
-poetry install
-```
-
-### 3. Setup Database
-
-```bash
-# Setup database and run migrations
 ./run.sh setup_db
 ./run.sh migrate
 ```
 
-### 4. Verify Installation
-
+### 3. Verify Installation
 ```bash
-# Check system health
 ./run.sh check
-
-# Run tests
 ./run.sh test
-
-# List available pipelines (none initially)
 ./run.sh list
 ```
 
 ## 🏗️ Create Your First Pipeline
 
-### 1. Create Pipeline Module
-
 Create `src/pipelines/my_first_pipeline.py`:
 
 ```python
 import pandas as pd
-from pipelines.pipeline_factory import create_etl_pipeline
+from pipelines.base_pipeline import MetabasePipeline, ClickHousePipeline
 from pipelines.tools.extractors.http_extractor import create_http_extractor
-from pipelines.tools.extractors.metabase_extractor import create_metabase_extractor
-from pipelines.tools.loaders.console_loader import create_console_loader
-from pipelines.tools.transformers.transformers import create_lambda_transformer
+from pipelines.tools.clickhouse_replace_loader import create_clickhouse_replace_loader
+from pipelines.pipeline_registry import pipeline_registry
 
-# Pipeline registry
-PIPELINE_REGISTRY = {}
+class MyFirstPipeline(MetabasePipeline, ClickHousePipeline):
+    def __init__(self):
+        super().__init__(
+            name="my_first_pipeline",
+            description="Extract posts from JSONPlaceholder API",
+            schedule="0 * * * *"  # Hourly
+        )
+        
+        self.http_extractor = create_http_extractor(
+            url="https://jsonplaceholder.typicode.com/posts",
+            headers={"Accept": "application/json"},
+            name="Posts Extractor"
+        )
+        
+        self.loader = create_clickhouse_replace_loader(
+            table_name="posts",
+            key_columns=["id"],
+            sort_column="updated_at",
+            name="Posts Loader"
+        )
+    
+    async def extract(self) -> pd.DataFrame:
+        return await self.http_extractor()
+    
+    async def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        data['processed_at'] = pd.Timestamp.now()
+        data['word_count'] = data['body'].str.split().str.len()
+        return self._add_merge_metadata(data, 'success')
+    
+    async def load(self, data: pd.DataFrame) -> bool:
+        return await self.loader(data)
 
-def create_my_pipeline():
-    """Create your first data pipeline."""
-    
-    # Create extractor (HTTP API example)
-    extractor = create_http_extractor(
-        url="https://jsonplaceholder.typicode.com/posts",
-        headers={"Accept": "application/json"},
-        name="Posts Extractor"
-    )
-    
-    # Alternative: Metabase extractor (if you have Metabase configured)
-    # metabase_extractor = create_metabase_extractor(
-    #     database_id=1,
-    #     table_id=2,
-    #     limit=100,
-    #     name="Metabase Data Extractor"
-    # )
-    
-    # Create transformer
-    def transform_data(df):
-        df['processed_at'] = pd.Timestamp.now()
-        df['word_count'] = df['body'].str.split().str.len()
-        return df
-    
-    transformer = create_lambda_transformer(transform_data, "Posts Transformer")
-    
-    # Create loader
-    loader = create_console_loader("Posts Console Loader")
-    
-    # Create pipeline
-    pipeline = create_etl_pipeline(
-        extractor=extractor,
-        transformer=transformer,
-        loader=loader,
-        name="My First Pipeline"
-    )
-    
-    return {
-        'pipeline': pipeline,
-        'description': 'Extract posts from JSONPlaceholder API',
-        'schedule': '0 * * * *',  # Hourly
-        'table_name': 'posts'
-    }
-
+# Register pipeline
 def register_pipelines():
-    """Register all pipelines in this module."""
-    PIPELINE_REGISTRY['my_first_pipeline'] = create_my_pipeline()
-
-def get_pipeline_registry():
-    """Get the pipeline registry."""
-    return PIPELINE_REGISTRY
-
-# Auto-register when module is imported
-register_pipelines()
+    pipeline = MyFirstPipeline()
+    pipeline_registry.register_pipeline(pipeline)
 ```
 
-### 2. Test Your Pipeline
+## 🧪 Test Your Pipeline
 
 ```bash
-# List pipelines (should now show your pipeline)
+# List pipelines
 ./run.sh list
 
-# Run your pipeline
+# Run pipeline
 ./run.sh cron_run my_first_pipeline
 
 # Check logs
 tail -f logs/jobs/my_first_pipeline.log
 ```
 
-### 3. Deploy to Production
+## 🚀 Deploy to Production
 
 ```bash
-# Deploy to remote server
+# Deploy to server
 ./deploy.sh username hostname
 
 # Verify deployment
 ssh username@hostname "cd data-processor && ./run.sh list"
 ```
 
-## 🔧 Common Operations
+## 🔧 Common Commands
 
 ### Pipeline Management
 ```bash
-# List all pipelines
-./run.sh list
-
-# Run specific pipeline
-./run.sh cron_run pipeline_name
-
-# Setup cron for pipeline
-./run.sh setup_cron pipeline_name
+./run.sh list                   # List pipelines
+./run.sh cron_run NAME          # Run pipeline
+./run.sh setup_cron NAME        # Setup cron
 ```
 
 ### Database Operations
 ```bash
-# Run migrations
-./run.sh migrate
-
-# Check migration status
-./run.sh migrate_status
-
-# Rollback migrations (if needed)
-./run.sh migrate_rollback 1  # Rollback last 1 migration
-
-# Drop and recreate database
-./run.sh drop_db
+./run.sh migrate                # Run migrations
+./run.sh migrate_status         # Check status
+./run.sh backfill 30            # Backfill 30 days
 ```
 
 ### Testing
 ```bash
-# Run all tests
-./run.sh test
-
-# Run specific test category
-./run.sh test unit
-
-# Run fast tests only
-./run.sh test --fast
-```
-
-### Data Operations
-```bash
-# Backfill historical data
-./run.sh backfill 30  # Last 30 days
-
-# Check data counts
-./run.sh backfill_counts
-
-# List available jobs
-./run.sh backfill_list
+./run.sh test                   # Run all tests
+./run.sh test unit              # Unit tests only
+./run.sh test --fast            # Fast tests only
 ```
 
 ## 📊 Monitoring
 
 ### Logs
-- **System logs**: `logs/system/application.log`
-- **Job logs**: `logs/jobs/{job_name}.log`
-- **Cron logs**: `logs/cron.log`
+- **System**: `logs/system/application.log`
+- **Jobs**: `logs/jobs/{job_name}.log`
+- **Cron**: `logs/cron.log`
 
 ### Health Checks
 ```bash
-# Check system health
-./run.sh check
-
-# Verify data counts
-./run.sh backfill_counts
-
-# Check migration status
-./run.sh migrate_status
+./run.sh check                  # System health
+./run.sh backfill_counts        # Data counts
+./run.sh migrate_status         # Migration status
 ```
 
 ## 🆘 Troubleshooting
 
-### Common Issues
-
 **"No pipelines found"**
 - Ensure pipeline files are in `src/pipelines/` with `*_pipeline.py` naming
-- Check that `register_pipelines()` is called
 
 **"Database connection failed"**
-- Verify ClickHouse configuration in `.env`
-- Check network connectivity and credentials
+- Check ClickHouse configuration in `.env`
 
 **"Tests failing"**
 - Install test dependencies: `pip install -r requirements-test.txt`
-- Check test results in `tests/results/`
-
-**"pytest not available"**
-- Install test dependencies: `pip install -r requirements-test.txt`
-- Ensure virtual environment is activated
-
-### Getting Help
-
-1. Check logs in `logs/` directory
-2. Run tests: `./run.sh test`
-3. Check configuration: `./run.sh check`
-4. Review test results in `tests/results/`
 
 ## 🎯 Next Steps
 
-1. **Explore Architecture**: Read the [Architecture Overview](../architecture/README.md)
+1. **Explore Architecture**: [Architecture Overview](./architecture/README.md)
 2. **Build More Pipelines**: Add additional pipeline modules
-3. **Customize Components**: Create custom extractors, transformers, or loaders
-4. **Production Deployment**: Follow the [Deployment Guide](../architecture/04-operations-deployment.md)
-5. **Extend Framework**: See [Extension Guide](../architecture/08-extension-customization.md)
-
-## 📚 Additional Resources
-
-- [Complete Architecture Documentation](../architecture/README.md)
-- [System Diagrams](../diagrams/README.md)
-- [API Reference](../api-reference.md)
-- [Developer Guide](../developer-guide.md)
+3. **Production Deployment**: [Deployment Guide](./architecture/04-operations-deployment.md)
+4. **Extend Framework**: [Extension Guide](./architecture/08-extension-customization.md)

@@ -6,6 +6,7 @@ Complete API documentation for the Data Processing Framework.
 
 - [Core Framework](#core-framework)
 - [Pipeline System](#pipeline-system)
+- [New Pipeline Architecture](#new-pipeline-architecture)
 - [Pipeline Tools](#pipeline-tools)
 - [Configuration](#configuration)
 - [Logging](#logging)
@@ -210,6 +211,204 @@ pipeline = registry.get_pipeline('my_pipeline')
 
 # List all pipelines
 pipelines = registry.list_pipelines()
+```
+
+## 🏗️ New Pipeline Architecture
+
+### Base Pipeline Classes (`src/pipelines/base_pipeline.py`)
+
+The new architecture provides class-based pipeline development with inheritance patterns.
+
+#### `BasePipeline` Class
+
+Abstract base class for all pipelines.
+
+```python
+from pipelines.base_pipeline import BasePipeline
+
+class MyPipeline(BasePipeline):
+    def __init__(self):
+        super().__init__(
+            name="my_pipeline",
+            description="My data pipeline",
+            schedule="* * * * *"
+        )
+    
+    async def extract(self) -> pd.DataFrame:
+        """Extract data from source systems."""
+        pass
+    
+    async def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Transform the extracted data."""
+        pass
+    
+    async def load(self, data: pd.DataFrame) -> bool:
+        """Load the transformed data to destination."""
+        pass
+```
+
+**Methods:**
+- `execute() -> bool` - Execute the complete ETL pipeline
+- `run_backfill(days: int) -> bool` - Run backfill for specified days
+- `get_time_range() -> Tuple[datetime, datetime, bool]` - Get current time range
+- `is_backfill_mode() -> bool` - Check if in backfill mode
+- `get_pipeline_info() -> Dict[str, Any]` - Get pipeline information
+
+#### `MetabasePipeline` Class
+
+Base class for pipelines that extract data from Metabase.
+
+```python
+from pipelines.base_pipeline import MetabasePipeline
+
+class MyMetabasePipeline(MetabasePipeline):
+    def __init__(self):
+        super().__init__(
+            name="my_metabase_pipeline",
+            description="Pipeline using Metabase",
+            schedule="0 * * * *"
+        )
+    
+    def _get_metabase_config(self):
+        """Get Metabase configuration."""
+        return self.metabase_config
+```
+
+#### `ClickHousePipeline` Class
+
+Base class for pipelines that load data to ClickHouse.
+
+```python
+from pipelines.base_pipeline import ClickHousePipeline
+
+class MyClickHousePipeline(ClickHousePipeline):
+    def __init__(self):
+        super().__init__(
+            name="my_clickhouse_pipeline",
+            description="Pipeline using ClickHouse",
+            schedule="0 * * * *"
+        )
+    
+    def _get_clickhouse_config(self):
+        """Get ClickHouse configuration."""
+        return self.clickhouse_config
+    
+    def _add_merge_metadata(self, data: pd.DataFrame, merge_status: str = 'success') -> pd.DataFrame:
+        """Add merge metadata to DataFrame."""
+        return add_merge_metadata(data, self.name, merge_status)
+```
+
+### Pipeline Registry (`src/pipelines/pipeline_registry.py`)
+
+Centralized registry for managing all pipelines.
+
+#### `PipelineRegistry` Class
+
+```python
+from pipelines.pipeline_registry import pipeline_registry
+
+# Register a pipeline
+pipeline = MyPipeline()
+pipeline_registry.register_pipeline(pipeline)
+
+# Get pipeline information
+pipeline_info = pipeline_registry.get_pipeline("my_pipeline")
+
+# List all pipelines
+all_pipelines = pipeline_registry.get_all_pipelines()
+```
+
+**Methods:**
+- `register_pipeline(pipeline_instance: Any) -> bool` - Register a pipeline
+- `register_pipeline_class(pipeline_class: Any, name: str, description: str, schedule: str) -> bool` - Register by class
+- `get_pipeline(name: str) -> Optional[Dict[str, Any]]` - Get pipeline by name
+- `get_all_pipelines() -> Dict[str, Dict[str, Any]]` - Get all pipelines
+- `list_pipeline_names() -> List[str]` - List pipeline names
+- `remove_pipeline(name: str) -> bool` - Remove pipeline
+- `get_scheduled_pipelines() -> List[Dict[str, Any]]` - Get scheduled pipelines
+
+### Generic Utilities (`src/pipelines/tools/`)
+
+#### Data Utilities (`data_utils.py`)
+
+```python
+from pipelines.tools.data_utils import (
+    convert_to_timestamp,
+    clean_data_for_clickhouse,
+    deduplicate_data,
+    add_merge_metadata,
+    prepare_datetime_columns
+)
+
+# Convert datetime fields to timestamps
+timestamps = convert_to_timestamp(series, "field_name")
+
+# Clean data for ClickHouse
+cleaned_data = clean_data_for_clickhouse(data, string_columns)
+
+# Deduplicate data
+deduplicated = deduplicate_data(data, key_columns, sort_column)
+
+# Add merge metadata
+data_with_metadata = add_merge_metadata(data, pipeline_name, "success")
+
+# Prepare datetime columns
+prepared_data = prepare_datetime_columns(data, datetime_mappings)
+```
+
+#### Pagination Utilities (`pagination_utils.py`)
+
+```python
+from pipelines.tools.pagination_utils import extract_with_pagination, create_paginated_extractor
+
+# Extract with pagination
+data = await extract_with_pagination(
+    extractor_func=create_extractor_func,
+    base_query="SELECT * FROM my_table",
+    batch_size=2000,
+    name="My Extractor"
+)
+
+# Create paginated extractor
+extractor = create_paginated_extractor(
+    extractor_func=create_extractor_func,
+    base_query="SELECT * FROM my_table",
+    batch_size=2000
+)
+```
+
+#### Backfill Utilities (`backfill_utils.py`)
+
+```python
+from pipelines.tools.backfill_utils import backfill_manager, run_backfill
+
+# Set backfill time range
+backfill_manager.set_backfill_time_range(start_date, end_date, "pipeline_name")
+
+# Get current time range
+start_time, end_time, is_backfill = backfill_manager.get_time_range()
+
+# Run backfill
+result = run_backfill(pipeline_func, days=30, pipeline_name="my_pipeline")
+```
+
+#### ClickHouse Replace Loader (`clickhouse_replace_loader.py`)
+
+```python
+from pipelines.tools.clickhouse_replace_loader import create_clickhouse_replace_loader
+
+# Create replace loader
+loader = create_clickhouse_replace_loader(
+    table_name="my_table",
+    key_columns=["id"],
+    sort_column="updated_at",
+    string_columns=["name", "description"],
+    max_retries=3,
+    name="My Loader"
+)
+
+# Load data with deduplication
+result = await loader(data)
 ```
 
 ## 🛠️ Pipeline Tools

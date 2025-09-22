@@ -29,6 +29,15 @@ Complete API documentation for all framework components.
 ### 🛠️ [Developer Guide](./developer-guide.md)
 Guidelines for contributing to and extending the framework.
 
+### 🔄 [Migration Guide](./migration-guide.md)
+Guide for migrating from old to new architecture.
+
+### 📋 [Change Logs](./change_logs/)
+
+### 🤖 [AI Prompts](./prompts/)
+AI prompts for creating and managing pipelines.
+Detailed release notes and change history.
+
 ## 🎯 Getting Started
 
 1. **New to the framework?** Start with the [Quick Start Guide](./quick-start.md)
@@ -47,7 +56,10 @@ Guidelines for contributing to and extending the framework.
 - **🔧 Extensible**: Plugin architecture for extractors, transformers, and loaders
 - **📈 Scalable**: Designed for enterprise data processing workloads
 - **🔄 Migration System**: Advanced database migration with rollback capabilities
-- **🧹 Clean Architecture**: No hardcoded business logic or domain-specific code
+- **🧹 Clean Architecture**: Class-based design with inheritance patterns
+- **🏗️ Professional Structure**: Well-organized modules with clear dependencies
+- **🔄 Centralized Management**: Single backfill manager and pipeline registry
+- **📦 Generic Utilities**: Reusable data processing and pagination tools
 
 ## 🤝 Contributing
 

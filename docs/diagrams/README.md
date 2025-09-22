@@ -8,7 +8,16 @@ This directory contains visual representations of the data processing framework 
 - **File**: `class_diagram.puml`
 - **Description**: Complete system architecture diagram showing all components, relationships, and data flow
 - **Format**: PlantUML (.puml)
-- **Viewer**: Use PlantUML viewer or VS Code PlantUML extension
+
+### Layered Architecture
+- **File**: `layered-architecture.puml`
+- **Description**: High-level layered architecture showing domain, application, service, and infrastructure layers
+- **Format**: PlantUML (.puml)
+
+### System Overview
+- **File**: `system-architecture.puml`
+- **Description**: Overall system architecture and component relationships
+- **Format**: PlantUML (.puml)
 
 ## How to View Diagrams
 

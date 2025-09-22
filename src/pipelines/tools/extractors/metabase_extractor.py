@@ -51,7 +51,7 @@ async def extract_from_metabase_table(
     try:
         timeout = timeout or config.timeout
         headers = {
-            "X-Metabase-Session": api_key,
+            "X-API-Key": api_key,
             "Content-Type": "application/json"
         }
         
@@ -151,7 +151,7 @@ async def extract_from_metabase_query(
     try:
         timeout = timeout or config.timeout
         headers = {
-            "X-Metabase-Session": api_key,
+            "X-API-Key": api_key,
             "Content-Type": "application/json"
         }
         
@@ -231,7 +231,7 @@ async def get_metabase_databases(
     try:
         timeout = timeout or config.timeout
         headers = {
-            "X-Metabase-Session": api_key,
+            "X-API-Key": api_key,
             "Content-Type": "application/json"
         }
         
@@ -247,7 +247,7 @@ async def get_metabase_databases(
                 databases = await response.json()
                 
                 log_with_timestamp(f"Found {len(databases)} databases in Metabase", "Metabase Extractor")
-                return databases
+                return databases.get("data", [])
                 
     except Exception as e:
         log_with_timestamp(f"Error getting Metabase databases: {e}", "Metabase Extractor", "error")
@@ -275,7 +275,7 @@ async def get_metabase_tables(
     try:
         timeout = timeout or config.timeout
         headers = {
-            "X-Metabase-Session": api_key,
+            "X-API-Key": api_key,
             "Content-Type": "application/json"
         }
         

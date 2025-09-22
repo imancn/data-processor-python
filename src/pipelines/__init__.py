@@ -1,27 +1,16 @@
 # src/pipelines/__init__.py
 """
-Generic pipeline framework for data processing.
+Pipeline framework for data processing.
 
-This package provides a comprehensive framework for building, registering,
-and executing data processing pipelines. It includes auto-discovery of
-pipeline modules, factory patterns for creating pipeline components,
-and a registry system for managing pipeline lifecycles.
+This package provides a framework for building and executing data processing pipelines.
+It includes auto-discovery of pipeline modules and a registry system for managing pipeline lifecycles.
 
 Example:
     >>> from pipelines import register_pipeline, get_all_pipelines
-    >>> from pipelines.pipeline_factory import create_etl_pipeline
     >>> 
-    >>> # Create a simple pipeline
-    >>> pipeline = create_etl_pipeline(
-    ...     name="example_pipeline",
-    ...     extractor=my_extractor,
-    ...     transformer=my_transformer,
-    ...     loader=my_loader
-    ... )
-    >>> 
-    >>> # Register the pipeline
+    >>> # Register a pipeline
     >>> register_pipeline("example", {
-    ...     "pipeline": pipeline,
+    ...     "pipeline": my_pipeline_function,
     ...     "schedule": "0 * * * *",
     ...     "description": "Example pipeline"
     ... })
@@ -41,20 +30,6 @@ logger = get_logger(__name__)
 
 # Global pipeline registry
 _pipeline_registry: Dict[str, Dict[str, Any]] = {}
-
-# Import core pipeline components
-from .pipeline_factory import (
-    create_etl_pipeline, create_el_pipeline,
-    create_parallel_pipeline, create_sequential_pipeline,
-    create_conditional_pipeline, create_retry_pipeline
-)
-from .pipeline_registry import (
-    register_pipeline as register_cron_job,
-    list_cron_jobs,
-    get_cron_job,
-    unregister_pipeline as remove_cron_job,
-    register_pipeline_with_timescope
-)
 
 def register_pipeline(name: str, pipeline_data: Dict[str, Any]) -> None:
     """
@@ -157,12 +132,6 @@ def discover_and_load_pipelines() -> int:
                 module.register_pipelines()
                 log_with_timestamp(f"Registered pipelines from {module_name}", "Pipeline Discovery")
             
-            # Check if module has get_pipeline_registry function
-            if hasattr(module, 'get_pipeline_registry'):
-                registry = module.get_pipeline_registry()
-                for pipeline_name, pipeline_data in registry.items():
-                    register_pipeline(pipeline_name, pipeline_data)
-            
             loaded_count += 1
             logger.info(f"Successfully loaded pipeline module: {module_name}")
             
@@ -237,20 +206,6 @@ __all__ = [
     
     # Discovery
     'discover_and_load_pipelines',
-    
-    # Factory functions
-    'create_etl_pipeline',
-    'create_el_pipeline',
-    'create_parallel_pipeline',
-    'create_sequential_pipeline',
-    'create_conditional_pipeline',
-    'create_retry_pipeline',
-    
-    # Cron job management
-    'register_cron_job',
-    'list_cron_jobs',
-    'get_cron_job',
-    'remove_cron_job',
     
     # Validation
     'validate_pipeline_data',

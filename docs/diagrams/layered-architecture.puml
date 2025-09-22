@@ -1,0 +1,72 @@
+@startuml Layered Architecture
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam rectangle {
+    BackgroundColor #F8F9FA
+    BorderColor #6C757D
+    FontColor #212529
+}
+
+package "Domain Layer" as Domain {
+    rectangle "Your Pipeline Logic" as PipelineLogic #E3F2FD
+}
+
+package "Application Layer" as Application {
+    rectangle "Pipeline Framework" as Framework #F3E5F5
+    rectangle "Discovery" as Discovery #F3E5F5
+    rectangle "Factory" as Factory #F3E5F5
+    rectangle "Registry" as Registry #F3E5F5
+}
+
+package "Service Layer" as Service {
+    rectangle "Tools" as Tools #E8F5E8
+    rectangle "Extractors" as Extractors #E8F5E8
+    rectangle "Transformers" as Transformers #E8F5E8
+    rectangle "Loaders" as Loaders #E8F5E8
+}
+
+package "Infrastructure Layer" as Infrastructure {
+    rectangle "Core" as Core #FFF3E0
+    rectangle "Config" as Config #FFF3E0
+    rectangle "Logging" as Logging #FFF3E0
+    rectangle "Migration" as Migration #FFF3E0
+    rectangle "Cron" as Cron #FFF3E0
+}
+
+' Dependencies
+PipelineLogic --> Framework
+Framework --> Discovery
+Framework --> Factory
+Framework --> Registry
+Framework --> Tools
+Tools --> Extractors
+Tools --> Transformers
+Tools --> Loaders
+Tools --> Core
+Core --> Config
+Core --> Logging
+Core --> Migration
+Core --> Cron
+
+note right of PipelineLogic
+  Your business logic
+  and data processing
+  requirements
+end note
+
+note right of Framework
+  Pipeline orchestration
+  and management
+end note
+
+note right of Tools
+  Reusable components
+  for data processing
+end note
+
+note right of Core
+  Infrastructure services
+  and utilities
+end note
+
+@enduml

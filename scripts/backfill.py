@@ -29,13 +29,19 @@ def run_job_for_date_range(job_name: str, start_date: datetime, end_date: dateti
     log_with_timestamp(f"Running {job_name} for date range {start_date.date()} to {end_date.date()}", "Backfill")
     
     try:
-        # Each job handles its own time scope internally
-        success = run_cron_job(job_name)
-        if success:
-            log_with_timestamp(f"Successfully completed {job_name}", "Backfill")
+        # Special handling for financial_trades pipeline
+        if job_name == 'financial_trades':
+            from pipelines.financial_trades_pipeline import run_backfill
+            days = (end_date - start_date).days
+            return run_backfill(days)
         else:
-            log_with_timestamp(f"Failed to complete {job_name}", "Backfill", "error")
-        return success
+            # Each job handles its own time scope internally
+            success = run_cron_job(job_name)
+            if success:
+                log_with_timestamp(f"Successfully completed {job_name}", "Backfill")
+            else:
+                log_with_timestamp(f"Failed to complete {job_name}", "Backfill", "error")
+            return success
     except Exception as e:
         log_with_timestamp(f"Error running {job_name}: {e}", "Backfill", "error")
         return False
@@ -98,25 +104,22 @@ def show_data_counts():
     try:
         import clickhouse_connect
         
-        clickhouse_config = config.get_clickhouse_config()
+        ch_config = config.get_clickhouse_config()
         client = clickhouse_connect.get_client(
-            host=clickhouse_config['host'],
-            port=clickhouse_config['port'],
-            username=clickhouse_config['user'],
-            password=clickhouse_config['password'],
-            database=clickhouse_config['database']
+            host=ch_config['host'],
+            port=ch_config['port'],
+            username=ch_config['user'],
+            password=ch_config['password'],
+            database=ch_config['database']
         )
         
-        log_with_timestamp("Database data counts:", "Backfill")
+        log_with_timestamp("Data counts in database:", "Backfill")
         
-        # Dynamically discover tables from database
-        tables = []
+        # Get all tables
         try:
-            # Get all tables in the database
             qr = client.query("SHOW TABLES")
-            tables = [row[0] for row in qr.result_rows if row[0] != 'migrations']
-        except Exception as e:
-            log_with_timestamp(f"Could not discover tables: {e}", "Backfill", "warning")
+            tables = [row[0] for row in qr.result_rows] if qr.result_rows else []
+        except:
             tables = []
         
         for table in tables:

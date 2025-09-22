@@ -1,130 +1,256 @@
 # src/pipelines/pipeline_registry.py
 """
-Generic Pipeline Registration System
-Supports dynamic pipeline registration with cron scheduling and table naming.
+Pipeline registry for managing and discovering pipelines.
+
+This module provides a centralized registry for all pipelines,
+enabling easy discovery, registration, and management.
 """
+
 from typing import Dict, Any, List, Optional
 from core.logging import log_with_timestamp
 
-# Global pipeline registry
-_pipeline_registry = {}
-_cron_registry = {}
 
-def register_pipeline(
-    pipeline_name: str,
-    pipeline_func: callable,
-    schedule: str = "0 * * * *",
-    description: str = "",
-    table_name: Optional[str] = None
-) -> bool:
+class PipelineRegistry:
     """
-    Register a pipeline with cron scheduling and table naming.
+    Centralized registry for all pipelines.
+    
+    This class manages pipeline registration, discovery, and provides
+    a single source of truth for all available pipelines.
+    """
+    
+    def __init__(self):
+        self._pipelines: Dict[str, Dict[str, Any]] = {}
+        self._pipeline_classes: Dict[str, Any] = {}
+    
+    def register_pipeline(self, pipeline_instance: Any) -> bool:
+        """
+        Register a pipeline instance.
+        
+        Args:
+            pipeline_instance: Pipeline instance to register
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not hasattr(pipeline_instance, 'get_pipeline_info'):
+                log_with_timestamp(f"Pipeline instance must have get_pipeline_info method", "Pipeline Registry", "error")
+                return False
+            
+            pipeline_info = pipeline_instance.get_pipeline_info()
+            pipeline_name = pipeline_info['name']
+            
+            if pipeline_name in self._pipelines:
+                log_with_timestamp(f"Pipeline {pipeline_name} is already registered, updating", "Pipeline Registry", "warning")
+            
+            self._pipelines[pipeline_name] = pipeline_info
+            self._pipeline_classes[pipeline_name] = pipeline_instance
+            
+            log_with_timestamp(f"Registered pipeline: {pipeline_name}", "Pipeline Registry")
+            return True
+            
+        except Exception as e:
+            log_with_timestamp(f"Error registering pipeline: {e}", "Pipeline Registry", "error")
+            return False
+    
+    def register_pipeline_class(self, pipeline_class: Any, name: str, description: str, schedule: str = "* * * * *") -> bool:
+        """
+        Register a pipeline class by instantiating it.
+        
+        Args:
+            pipeline_class: Pipeline class to instantiate and register
+            name: Pipeline name
+            description: Pipeline description
+            schedule: Cron schedule
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            pipeline_instance = pipeline_class(name, description, schedule)
+            return self.register_pipeline(pipeline_instance)
+        except Exception as e:
+            log_with_timestamp(f"Error registering pipeline class {name}: {e}", "Pipeline Registry", "error")
+            return False
+    
+    def get_pipeline(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a pipeline by name.
+        
+        Args:
+            name: Pipeline name
+            
+        Returns:
+            Pipeline info dictionary or None if not found
+        """
+        return self._pipelines.get(name)
+    
+    def get_pipeline_instance(self, name: str) -> Optional[Any]:
+        """
+        Get a pipeline instance by name.
+        
+        Args:
+            name: Pipeline name
+            
+        Returns:
+            Pipeline instance or None if not found
+        """
+        return self._pipeline_classes.get(name)
+    
+    def get_all_pipelines(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all registered pipelines.
+        
+        Returns:
+            Dictionary of all pipeline info
+        """
+        return self._pipelines.copy()
+    
+    def list_pipeline_names(self) -> List[str]:
+        """
+        Get list of all pipeline names.
+        
+        Returns:
+            List of pipeline names
+        """
+        return list(self._pipelines.keys())
+    
+    def remove_pipeline(self, name: str) -> bool:
+        """
+        Remove a pipeline from the registry.
+        
+        Args:
+            name: Pipeline name to remove
+            
+        Returns:
+            True if removed, False if not found
+        """
+        if name in self._pipelines:
+            del self._pipelines[name]
+            if name in self._pipeline_classes:
+                del self._pipeline_classes[name]
+            log_with_timestamp(f"Removed pipeline: {name}", "Pipeline Registry")
+            return True
+        return False
+    
+    def get_pipelines_by_schedule(self, schedule: str) -> List[Dict[str, Any]]:
+        """
+        Get all pipelines with a specific schedule.
+        
+        Args:
+            schedule: Cron schedule to filter by
+            
+        Returns:
+            List of pipeline info dictionaries
+        """
+        return [pipeline for pipeline in self._pipelines.values() if pipeline.get('schedule') == schedule]
+    
+    def get_scheduled_pipelines(self) -> List[Dict[str, Any]]:
+        """
+        Get all pipelines that have a schedule (not manual only).
+        
+        Returns:
+            List of scheduled pipeline info dictionaries
+        """
+        return [pipeline for pipeline in self._pipelines.values() if pipeline.get('schedule') != 'manual']
+    
+    def validate_pipeline(self, pipeline_info: Dict[str, Any]) -> bool:
+        """
+        Validate pipeline info structure.
+        
+        Args:
+            pipeline_info: Pipeline info to validate
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        required_keys = ['name', 'description', 'execute']
+        missing_keys = [key for key in required_keys if key not in pipeline_info]
+        
+        if missing_keys:
+            log_with_timestamp(f"Pipeline validation failed - missing keys: {missing_keys}", "Pipeline Registry", "error")
+            return False
+        
+        if not callable(pipeline_info['execute']):
+            log_with_timestamp(f"Pipeline validation failed - execute must be callable", "Pipeline Registry", "error")
+            return False
+        
+        return True
+
+
+# Global pipeline registry instance
+pipeline_registry = PipelineRegistry()
+
+
+def register_pipeline(pipeline_instance: Any) -> bool:
+    """
+    Register a pipeline instance in the global registry.
     
     Args:
-        pipeline_name: Name of the pipeline (e.g., 'data_hourly')
-        pipeline_func: Pipeline function to execute
-        schedule: Cron schedule expression
-        description: Human-readable description
-        table_name: Destination table name (defaults to pipeline_name)
+        pipeline_instance: Pipeline instance to register
+        
+    Returns:
+        True if successful, False otherwise
     """
-    try:
-        # Use pipeline_name as table_name if not specified
-        if table_name is None:
-            table_name = pipeline_name
-        
-        # Register pipeline
-        _pipeline_registry[pipeline_name] = {
-            'pipeline': pipeline_func,
-            'table_name': table_name,
-            'description': description
-        }
-        
-        # Register cron job
-        _cron_registry[pipeline_name] = {
-            'pipeline': pipeline_func,
-            'schedule': schedule,
-            'description': description,
-            'table_name': table_name
-        }
-        
-        log_with_timestamp(f"Registered pipeline: {pipeline_name} -> {table_name} (schedule: {schedule})", "Pipeline Registry")
-        return True
-        
-    except Exception as e:
-        log_with_timestamp(f"Failed to register pipeline {pipeline_name}: {e}", "Pipeline Registry", "error")
-        return False
+    return pipeline_registry.register_pipeline(pipeline_instance)
 
-def unregister_pipeline(pipeline_name: str) -> bool:
-    """Unregister a pipeline."""
-    try:
-        if pipeline_name in _pipeline_registry:
-            del _pipeline_registry[pipeline_name]
-        if pipeline_name in _cron_registry:
-            del _cron_registry[pipeline_name]
-        
-        log_with_timestamp(f"Unregistered pipeline: {pipeline_name}", "Pipeline Registry")
-        return True
-    except Exception as e:
-        log_with_timestamp(f"Failed to unregister pipeline {pipeline_name}: {e}", "Pipeline Registry", "error")
-        return False
 
-def get_pipeline(pipeline_name: str) -> Optional[Dict[str, Any]]:
-    """Get a pipeline by name."""
-    return _pipeline_registry.get(pipeline_name)
-
-def get_cron_job(job_name: str) -> Optional[Dict[str, Any]]:
-    """Get a cron job by name."""
-    return _cron_registry.get(job_name)
-
-def list_pipelines() -> List[str]:
-    """List all registered pipelines."""
-    return list(_pipeline_registry.keys())
-
-def list_cron_jobs() -> Dict[str, Dict[str, Any]]:
-    """List all registered cron jobs."""
-    return _cron_registry.copy()
-
-def get_table_name(pipeline_name: str) -> Optional[str]:
-    """Get the table name for a pipeline."""
-    pipeline = _pipeline_registry.get(pipeline_name)
-    return pipeline.get('table_name') if pipeline else None
-
-def register_pipeline_with_timescope(
-    base_name: str,
-    pipeline_func: callable,
-    time_scopes: List[str],
-    schedule_template: str = "0 * * * *",
-    description_template: str = "{base_name} {time_scope} data"
-) -> int:
+def register_pipeline_class(pipeline_class: Any, name: str, description: str, schedule: str = "* * * * *") -> bool:
     """
-    Register multiple pipelines for different time scopes.
+    Register a pipeline class in the global registry.
     
     Args:
-        base_name: Base pipeline name (e.g., 'data')
-        pipeline_func: Pipeline function factory
-        time_scopes: List of time scopes (e.g., ['hourly', 'daily', 'weekly'])
-        schedule_template: Cron schedule template
-        description_template: Description template with {base_name} and {time_scope} placeholders
+        pipeline_class: Pipeline class to instantiate and register
+        name: Pipeline name
+        description: Pipeline description
+        schedule: Cron schedule
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    return pipeline_registry.register_pipeline_class(pipeline_class, name, description, schedule)
+
+
+def get_pipeline(name: str) -> Optional[Dict[str, Any]]:
+    """
+    Get a pipeline by name from the global registry.
+    
+    Args:
+        name: Pipeline name
+        
+    Returns:
+        Pipeline info dictionary or None if not found
+    """
+    return pipeline_registry.get_pipeline(name)
+
+
+def get_all_pipelines() -> Dict[str, Dict[str, Any]]:
+    """
+    Get all pipelines from the global registry.
     
     Returns:
-        Number of pipelines registered
+        Dictionary of all pipeline info
     """
-    registered_count = 0
-    
-    for time_scope in time_scopes:
-        pipeline_name = f"{base_name}_{time_scope}"
-        table_name = f"{base_name}_{time_scope}"
-        schedule = schedule_template
-        description = description_template.format(base_name=base_name, time_scope=time_scope)
-        
-        if register_pipeline(pipeline_name, pipeline_func, schedule, description, table_name):
-            registered_count += 1
-    
-    return registered_count
+    return pipeline_registry.get_all_pipelines()
 
-def clear_registry():
-    """Clear all registered pipelines and cron jobs."""
-    global _pipeline_registry, _cron_registry
-    _pipeline_registry.clear()
-    _cron_registry.clear()
-    log_with_timestamp("Cleared all pipeline registrations", "Pipeline Registry")
+
+def list_pipeline_names() -> List[str]:
+    """
+    Get list of all pipeline names from the global registry.
+    
+    Returns:
+        List of pipeline names
+    """
+    return pipeline_registry.list_pipeline_names()
+
+
+# Public API
+__all__ = [
+    'PipelineRegistry',
+    'pipeline_registry',
+    'register_pipeline',
+    'register_pipeline_class',
+    'get_pipeline',
+    'get_all_pipelines',
+    'list_pipeline_names',
+]
